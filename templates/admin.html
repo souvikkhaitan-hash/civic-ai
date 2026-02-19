@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Civic AI – Admin Dashboard</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        header {
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 1rem 0;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: auto;
+            padding: 0 1.5rem;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: #1e3a5f;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        main { padding: 2rem 0; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.2rem;
+            border-radius: 12px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .stat-title { font-size: 0.85rem; color: #64748b; }
+        .stat-value { font-size: 1.8rem; font-weight: 600; }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            overflow-x: auto;
+            border: 1px solid #e2e8f0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #1e3a5f;
+            color: white;
+            padding: 0.75rem;
+            text-align: left;
+            font-size: 0.85rem;
+        }
+
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.85rem;
+        }
+
+        tr:hover { background: #f8fafc; }
+
+        .badge {
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .badge-open { background: #fef3c7; color: #d97706; }
+        .badge-progress { background: #dbeafe; color: #2563eb; }
+        .badge-resolved { background: #dcfce7; color: #16a34a; }
+
+        .badge-high { background: #fee2e2; color: #dc2626; }
+        .badge-medium { background: #fef3c7; color: #d97706; }
+        .badge-low { background: #dcfce7; color: #16a34a; }
+
+        button {
+            margin-top: 6px;
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-start { background: #2563eb; color: white; }
+        .btn-resolve { background: #16a34a; color: white; }
+
+        input {
+            padding: 0.5rem;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            width: 260px;
+        }
+        .btn-undo {
+    background: #f97316;
+    color: white;
+}
+
+    </style>
+</head>
+
+<body>
+
+<header>
+    <div class="container logo">
+        <div class="logo-icon">📋</div>
+        <div>
+            <h2>Civic AI</h2>
+            <small>Admin Dashboard</small>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+
+    <!-- STATS -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-title">Total Complaints</div>
+            <div class="stat-value">{{ complaints|length }}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-title">Open</div>
+            <div class="stat-value">{{ complaints|selectattr('status','equalto','OPEN')|list|length }}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-title">In Progress</div>
+            <div class="stat-value">{{ complaints|selectattr('status','equalto','IN_PROGRESS')|list|length }}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-title">Resolved</div>
+            <div class="stat-value">{{ complaints|selectattr('status','equalto','RESOLVED')|list|length }}</div>
+        </div>
+    </div>
+
+    <input type="text" placeholder="Search complaints..." onkeyup="filterTable(this.value)">
+
+    <br><br>
+
+    <!-- TABLE -->
+    <div class="table-container">
+        <table id="complaintsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Complaint</th>
+                    <th>Department</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Risk</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+
+            <tbody>
+            {% for c in complaints %}
+                <tr>
+                    <td>#{{ c.id }}</td>
+                    <td>{{ c.complaint }}</td>
+                    <td>{{ c.department }}</td>
+
+                    <td>
+                        {% if c.priority == 'HIGH' %}
+                            <span class="badge badge-high">HIGH</span>
+                        {% elif c.priority == 'MEDIUM' %}
+                            <span class="badge badge-medium">MEDIUM</span>
+                        {% else %}
+                            <span class="badge badge-low">LOW</span>
+                        {% endif %}
+                    </td>
+
+                    <td>
+  {% if c.status == 'OPEN' %}
+    <span class="badge badge-open">OPEN</span>
+    <button onclick="updateStatus({{ c.id }}, 'IN_PROGRESS')">Start</button>
+
+  {% elif c.status == 'IN_PROGRESS' %}
+    <span class="badge badge-progress">IN PROGRESS</span>
+    <button onclick="updateStatus({{ c.id }}, 'RESOLVED')">Resolve</button>
+
+  {% elif c.status == 'RESOLVED' %}
+    <span class="badge badge-resolved">RESOLVED</span>
+    <button class="btn-undo" onclick="undoStatus({{ c.id }})">Undo</button>
+
+  {% endif %}
+</td>
+
+
+                    <td>{{ c.risk_score }}</td>
+                    <td>{{ c.created_at }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</main>
+<script>
+function updateStatus(id, status) {
+    fetch(`/complaints/${id}/status`, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(res => res.json())
+    .then(() => location.reload())
+    .catch(() => alert("Failed to update status"));
+}
+
+function undoStatus(id) {
+    if (!confirm("Are you sure you want to undo this action?")) return;
+
+    fetch(`/complaints/${id}/undo`, {
+        method: "PUT"
+    })
+    .then(res => res.json())
+    .then(() => location.reload())
+    .catch(() => alert("Failed to undo status"));
+}
+
+function filterTable(value) {
+    value = value.toLowerCase();
+    document.querySelectorAll("#complaintsTable tbody tr").forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(value)
+            ? ""
+            : "none";
+    });
+}
+</script>
+
+<script>
+    // Auto refresh dashboard every 5 seconds
+    setInterval(() => {
+        location.reload();
+    }, 5000);
+</script>
+
+</body>
+</html>
