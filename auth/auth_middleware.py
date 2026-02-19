@@ -1,8 +1,12 @@
 from functools import wraps
 from flask import request, jsonify
 import jwt
+import os
+from dotenv import load_dotenv
 
-SECRET_KEY = "civic-ai-ultra-secure-key-2026-souvik"
+
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 def token_required(f):
     @wraps(f)
