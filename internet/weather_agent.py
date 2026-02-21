@@ -3,7 +3,7 @@ from utils.signal_formatter import weather_to_complaint
 from ai_agent import analyze_complaint
 
 API_KEY = "7f0856d3df6f559d0714c87079e90c49"
-CITY = "Assam"
+CITY = "Nagpur"
 
 def run_weather_check():
     url = (
@@ -27,3 +27,27 @@ def run_weather_check():
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+def weather_intelligence():
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={API_KEY}&units=metric"
+    r = requests.get(url, timeout=10)
+    data = r.json()
+
+    if r.status_code != 200:
+        return {"error": "weather_failed"}
+
+    temp = data["main"]["temp"]
+    condition = data["weather"][0]["main"]
+
+    risk = "LOW"
+    if condition.lower() in ["rain", "thunderstorm"]:
+        risk = "HIGH"
+    elif temp > 38:
+        risk = "MEDIUM"
+
+    return {
+        "city": CITY,
+        "temperature": temp,
+        "condition": condition,
+        "risk_level": risk
+    }

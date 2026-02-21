@@ -1,9 +1,44 @@
 from flask import Blueprint, request, jsonify
 from database import get_connection
 from auth.auth_utils import hash_password, verify_password, create_token
+import jwt
+import datetime
+from flask import current_app
+
+
 
 # ✅ THIS LINE IS THE FIX
 auth_bp = Blueprint("auth", __name__)
+
+# ==============================
+# ADMIN LOGIN
+# ==============================
+@auth_bp.route("/admin-login", methods=["POST"])
+def admin_login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT id FROM admins WHERE username=? AND password=?",
+        (username, password)
+    )
+    admin = cur.fetchone()
+    conn.close()
+
+    if not admin:
+        return jsonify({"error": "Invalid admin credentials"}), 401
+
+    token = jwt.encode({
+        "admin_id": admin[0],
+        "role": "admin",
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }, current_app.config["SECRET_KEY"], algorithm="HS256")
+
+    return jsonify({"token": token})
 
 # ==========================
 # USER REGISTER

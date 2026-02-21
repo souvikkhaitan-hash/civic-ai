@@ -1,135 +1,205 @@
 from flask import Flask, request, jsonify, render_template
 from internet.weather_agent import run_weather_check
 from scheduler import start_scheduler
-import threading
 from auth.auth_routes import auth_bp
 from auth.auth_middleware import token_required
-from database import get_user_complaints
-from database import save_complaint
-from database import get_user_dashboard
-import os
-from dotenv import load_dotenv
-
-
 from database import (
     init_db,
     get_all_complaints,
-    update_status,
-    undo_status,
     enforce_sla,
-    get_analytics
+    get_analytics,
+    get_user_complaints,
+    save_complaint
 )
-
 from ai_agent import analyze_complaint
+import os
+from dotenv import load_dotenv
+import jwt
+import datetime
+import sqlite3
+from admin_auth import admin_required
+from internet.weather_agent import weather_intelligence
+from internet.intelligence import civic_intelligence
+from utils.response import success
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 load_dotenv()
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 # Initialize DB
 init_db()
-
 app.register_blueprint(auth_bp)
-
 
 # 🔁 SLA enforcement
 @app.before_request
 def auto_sla():
     enforce_sla()
 
-# 📩 Submit complaint
+# ==========================================
+# SUBMIT COMPLAINT
+# ==========================================
 @app.route("/submit", methods=["POST"])
 @token_required
 def submit():
     data = request.get_json()
+    description = data.get("description")
 
-    if not data or "complaint" not in data:
-        return jsonify({"error": "Complaint required"}), 400
+    ai_result = analyze_complaint(description)
 
-    result = analyze_complaint(data["complaint"])
     save_complaint(
-        result["complaint"],
-        result["department"],
-        result["priority"],
-        result["risk_score"],
-        result["explanation"],
+        description,
+        ai_result.get("department", "General"),
+        ai_result.get("priority", "MEDIUM"),
+        ai_result.get("risk_score", 0),
+        ai_result.get("explanation", []),
         request.user_id
     )
-    result["user_id"] = request.user_id
 
-    return jsonify(result)
+    return jsonify(success(ai_result, "Complaint submitted"))
 
-# 👤 User complaints
-@app.route("/my-complaints", methods=["GET"])
-@token_required
-def my_complaints():
-    try:
-        complaints = get_user_complaints(request.user_id)
-        return jsonify(complaints)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# ==========================================
+# ADMIN LOGIN
+# ==========================================
+@app.route("/admin-login", methods=["POST"])
+def admin_login():
+    data = request.get_json()
 
+    if data.get("username") == ADMIN_USERNAME and data.get("password") == ADMIN_PASSWORD:
+        token = jwt.encode(
+            {"admin": True, "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=12)},
+            app.config["SECRET_KEY"],
+            algorithm="HS256"
+        )
+        return jsonify({"token": token})
 
-# 📋 Get all complaints (API)
-@app.route("/complaints", methods=["GET"])
-def complaints():
-    return jsonify(get_all_complaints())
+    return jsonify({"error": "Invalid admin credentials"}), 401
 
-# 🧑‍💼 Admin dashboard
-@app.route("/admin")
-def admin_dashboard():
-    return render_template("admin.html", complaints=get_all_complaints())
+# ==========================================
+# ADMIN ROUTES
+# ==========================================
+@app.route("/admin/complaints")
+@admin_required
+def admin_complaints():
+    complaints = get_all_complaints()
+    grouped = {}
 
-# 🔄 Update status
+    for c in complaints:
+        key = c["complaint"].lower().strip()
+
+        if key not in grouped:
+            grouped[key] = c.copy()
+            grouped[key]["count"] = 1
+            grouped[key]["ids"] = [c["id"]] 
+            grouped[key]["ids"]=[c["id"]]# 👈 IMPORTANT
+        else:
+            grouped[key]["count"] += 1
+            grouped[key]["ids"].append(c["id"])
+            grouped[key]["id"]=min(grouped[key]["ids"])
+
+    return jsonify(list(grouped.values()))
+
+@app.route("/admin-ui")
+def admin_ui():
+    return render_template("admin.html")
+
+@app.route("/admin-login-ui")
+def admin_login_ui():
+    return render_template("admin_login.html")
+
+# ==========================================
+# UPDATE STATUS
+# ==========================================
 @app.route("/complaints/<int:complaint_id>/status", methods=["PUT"])
+@admin_required
 def update_complaint_status(complaint_id):
     data = request.get_json()
-    status = data.get("status")
+    new_status = data.get("status")
 
-    if status not in ["OPEN", "IN_PROGRESS", "RESOLVED"]:
-        return jsonify({"error": "Invalid status"}), 400
+    conn = sqlite3.connect("civic_ai.db")
+    cur = conn.cursor()
 
-    update_status(complaint_id, status)
-    return jsonify({"message": "Status updated", "new_status": status})
+    cur.execute("SELECT status FROM complaints WHERE id=?", (complaint_id,))
+    current = cur.fetchone()[0]
 
-# ↩️ Undo status
+    cur.execute("""
+        UPDATE complaints
+        SET previous_status=?, status=?
+        WHERE id=?
+    """, (current, new_status, complaint_id))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "updated"})
+
+# ==========================================
+# UNDO STATUS (FIXED)
+# ==========================================
 @app.route("/complaints/<int:complaint_id>/undo", methods=["PUT"])
-def undo_complaint_status(complaint_id):
-    undo_status(complaint_id)
-    return jsonify({"message": "Status reverted"})
+@admin_required
+def undo_status_route(complaint_id):
+    conn = sqlite3.connect("civic_ai.db")
+    cur = conn.cursor()
 
-# 🌐 Internet ingestion
+    cur.execute("""
+        UPDATE complaints
+        SET status = previous_status
+        WHERE id=?
+    """, (complaint_id,))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "undone"})
+
+# ==========================================
+# DELETE COMPLAINT (FIXED)
+# ==========================================
+@app.route("/complaints/<int:cid>", methods=["DELETE"])
+@admin_required
+def delete_complaint(cid):
+    conn = sqlite3.connect("civic_ai.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM complaints WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Deleted"})
+
+# ==========================================
+# OTHER ROUTES
+# ==========================================
 @app.route("/internet/weather-check", methods=["POST"])
 def weather_check():
     return run_weather_check()
 
-# 📊 Analytics
 @app.route("/analytics", methods=["GET"])
 def analytics():
     return jsonify(get_analytics())
 
-# ===============================
-# USER DASHBOARD (FINAL)
-# ===============================
-@app.route("/user-dashboard", methods=["GET"])
-@token_required
-def user_dashboard():
-    from database import get_user_complaints
+@app.route("/intel/weather")
+def weather_intel_api():
+    return weather_intelligence()
 
-    complaints = get_user_complaints(request.user_id)
+@app.route("/intel/civic")
+def get_civic_intel():
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
 
-    total = len(complaints)
+    if not lat or not lon:
+        return {"error": "Missing lat/lon"}
 
-    status_counts = {}
-    for c in complaints:
-        status = c["status"]
-        status_counts[status] = status_counts.get(status, 0) + 1
+    return civic_intelligence(lat, lon)
 
+@app.errorhandler(Exception)
+def global_error(e):
+    print("ERROR:", e)
     return jsonify({
-        "total": total,
-        "status_counts": status_counts,
-        "recent": complaints[:5]
-    })
+        "success": False,
+        "error": str(e)
+    }), 500
 
 if __name__ == "__main__":
     start_scheduler()

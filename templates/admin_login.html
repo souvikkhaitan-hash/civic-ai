@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Login</title>
+
+  <!-- Flask static CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="login-icon">🛡️</div>
+    <h1>Admin Login</h1>
+    <p class="subtitle">Enter your credentials to continue</p>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="username" required />
+      </div>
+
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" required />
+      </div>
+
+      <button class="btn btn-primary" id="login-btn">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const btn = document.getElementById("login-btn");
+  btn.textContent = "Signing in...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch("/admin-login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Login failed");
+      return;
+    }
+
+    localStorage.setItem("admin_token", data.token);
+
+    // Redirect to dashboard
+    window.location.href = "/admin-ui";
+
+  } catch (err) {
+    alert("Network error");
+    console.error(err);
+  } finally {
+    btn.textContent = "Sign In";
+    btn.disabled = false;
+  }
+});
+</script>
+
+</body>
+</html>

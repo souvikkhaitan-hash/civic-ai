@@ -6,7 +6,10 @@ from database import (
     escalate_complaint
 )
 
-DEMO_MODE = True
+DEMO_MODE = False
+
+# System user for AI-generated complaints
+SYSTEM_USER_ID = 0
 
 
 def analyze_complaint(complaint_text):
@@ -18,11 +21,12 @@ def analyze_complaint(complaint_text):
     # 🔍 SMART SCORING ENGINE
     # ==============================
 
-    # Flooding / drainage detection
     water_keywords = [
         "water", "flood", "flooded",
         "drain", "overflow", "logging"
     ]
+
+    # Flooding detection
     if any(w in text for w in water_keywords):
         score += 15
         explanation.append("Detected flooding/water issue (+15)")
@@ -37,9 +41,9 @@ def analyze_complaint(complaint_text):
         score += 40
         explanation.append("Emergency zone detected (+40)")
 
-    # Bonus severity booster
+    # Base civic risk
     if score > 0:
-        score += 5  # ensures no score becomes 0
+        score += 5
         explanation.append("Base civic risk added (+5)")
 
     # ==============================
@@ -61,7 +65,7 @@ def analyze_complaint(complaint_text):
     department = "Drainage" if any(w in text for w in water_keywords) else "General"
 
     # ==============================
-    # 🔁 SMART DUPLICATE GROUPING
+    # 🔁 DUPLICATE DETECTION
     # ==============================
     keyword = None
     for w in water_keywords:
@@ -72,10 +76,12 @@ def analyze_complaint(complaint_text):
     existing = find_similar_open_complaint(keyword) if keyword else None
 
     # ==============================
-    # 🔁 MERGE DUPLICATES
+    # 🔁 MERGE DUPLICATES (FIXED)
     # ==============================
     if existing:
-        existing_id, old_score, old_explanation = existing
+        existing_id = existing["id"]
+        old_score = existing["risk_score"]
+        old_explanation = existing["explanation"]
 
         # Safe int conversion
         try:
@@ -83,9 +89,13 @@ def analyze_complaint(complaint_text):
         except:
             old_score = 0
 
-        new_score = old_score + score
+        # Smart merge with cap (PRODUCTION SAFE)
+        merged_score = old_score + int(score * 0.5)
 
-        # Safe JSON explanation load
+        # HARD CAP (prevents 1000+ scores)
+        new_score = min(merged_score, 100)
+
+        # Safe JSON load
         try:
             old_exp_list = json.loads(old_explanation) if old_explanation else []
         except:
@@ -100,7 +110,9 @@ def analyze_complaint(complaint_text):
             "message": "Duplicate complaint merged",
             "complaint_id": existing_id,
             "risk_score": new_score,
-            "status": "IN_PROGRESS"
+            "status": "IN_PROGRESS",
+            "department": department,
+            "priority": "HIGH"
         }
 
     # ==============================
@@ -111,7 +123,8 @@ def analyze_complaint(complaint_text):
         department,
         priority,
         score,
-        explanation
+        explanation,
+        SYSTEM_USER_ID  # AI system complaints
     )
 
     return {

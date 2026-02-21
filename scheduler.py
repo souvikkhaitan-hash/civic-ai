@@ -19,14 +19,7 @@ def ai_loop():
         weather = run_weather_check()
         print("Weather:", weather)
 
-        # Fake AI live complaint
-        complaint = random.choice(DEMO_COMPLAINTS)
-        print("⚡ Demo AI Generated:", complaint)
-
-        result = analyze_complaint(complaint)
-        print("Demo:", result)
-
-        time.sleep(15)  # every 15 seconds
+        time.sleep(200)  # every 15 seconds
 
 
 def start_scheduler():
