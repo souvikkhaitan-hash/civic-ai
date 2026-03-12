@@ -36,7 +36,7 @@ from werkzeug.utils import secure_filename
 # Configuration
 load_dotenv()
 app = Flask(__name__, template_folder="templates", static_folder="static")
-
+print("Flask app initialized successfully.")
 # Configuration
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
@@ -366,11 +366,10 @@ def user_delete(cid):
     return jsonify({"success": True})
 
 if __name__ == "__main__":
-    print("Initializing database and starting server...")
+    print("Running local development server...")
     init_db()
 
-    # Prevent schedulers running multiple times
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         print("[SYS] Starting background agents...")
         start_scheduler()
         start_reddit_scheduler()
