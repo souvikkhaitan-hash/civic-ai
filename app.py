@@ -368,13 +368,13 @@ def user_delete(cid):
 if __name__ == "__main__":
     print("Initializing database and starting server...")
     init_db()
-    
-    # 🔁 Prevent schedulers from starting twice in Flask Debug Mode
-    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+
+    # Prevent schedulers running multiple times
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         print("[SYS] Starting background agents...")
         start_scheduler()
         start_reddit_scheduler()
         start_news_scheduler()
 
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port)
