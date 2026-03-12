@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Complaint Management Portal</title>
+
+<style>
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family: "Segoe UI", Arial, sans-serif;
+}
+
+/* COLOR VARIABLES */
+
+:root{
+--primary:#0b3d91;
+--secondary:#1f5fbf;
+--accent:#c79a2b;
+--bg:#f1f4f8;
+--text:#333;
+--green:#2e7d32;
+}
+
+/* PAGE LAYOUT */
+
+body{
+display:flex;
+flex-direction:column;
+min-height:100vh;
+background:var(--bg);
+}
+
+/* HEADER */
+
+header{
+background:var(--primary);
+color:white;
+padding:15px 60px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+border-bottom:4px solid var(--accent);
+}
+
+.logo{
+font-size:22px;
+font-weight:600;
+}
+
+nav ul{
+display:flex;
+list-style:none;
+gap:25px;
+}
+
+nav ul li{
+cursor:pointer;
+opacity:0.95;
+}
+nav ul{
+display:flex;
+list-style:none;
+gap:25px;
+}
+
+nav a{
+text-decoration:none;
+color:white;
+font-size:15px;
+font-weight:500;
+}
+
+nav a:hover{
+text-decoration:underline;
+}
+/* HERO */
+
+.hero{
+flex:1;
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:70px;
+background:linear-gradient(180deg,#ffffff,var(--bg));
+}
+
+.text{
+max-width:560px;
+}
+
+.text h1{
+font-size:40px;
+color:var(--primary);
+margin-bottom:20px;
+}
+
+.text p{
+font-size:18px;
+color:var(--text);
+line-height:1.6;
+margin-bottom:35px;
+}
+
+/* BUTTONS */
+
+.buttons{
+display:flex;
+gap:20px;
+}
+
+.btn{
+padding:13px 28px;
+font-size:16px;
+border-radius:4px;
+border:none;
+cursor:pointer;
+font-weight:600;
+}
+
+.admin{
+background:var(--secondary);
+color:white;
+}
+
+.admin:hover{
+background:#174a96;
+}
+
+.user{
+background:var(--green);
+color:white;
+}
+
+.user:hover{
+background:#1f5e25;
+}
+
+/* IMAGE */
+
+.hero img{
+width:420px;
+}
+
+/* INFO STRIP */
+
+.info-strip{
+background:white;
+display:flex;
+justify-content:center;
+gap:60px;
+padding:20px;
+border-top:1px solid #ddd;
+border-bottom:1px solid #ddd;
+}
+
+.info-box{
+text-align:center;
+}
+
+.info-box h3{
+color:var(--primary);
+}
+
+/* FOOTER */
+
+footer{
+background:#081f4b;
+color:white;
+text-align:center;
+padding:18px;
+margin-top:auto;
+font-size:14px;
+}
+
+</style>
+</head>
+<body>
+
+<header>
+<div class="logo">Advanced Complaint Management Portal</div>
+
+<nav>
+<ul class="nav-links">
+<li><a href="/">Home</a></li>
+<li><a href="/user-dashboard">Dashboard</a></li>
+<li><a href="/user-login-ui">User Login</a></li>
+<li><a href="/admin-login-ui">Officer Login</a></li>
+<li><a href="/register-ui">Register</a></li>
+</ul>
+</nav>
+</header>
+
+
+<section class="hero">
+
+<div class="text">
+<h1>AI-Based Complaint Management System</h1>
+
+<p>
+This official portal enables citizens to register complaints, track progress,
+and receive updates. Artificial Intelligence assists departments in sorting,
+prioritizing, and resolving public issues efficiently.
+</p>
+
+<div class="buttons">
+<button class="btn admin" onclick="location.href='/admin-login-ui'">Officer Login</button>
+<button class="btn user" onclick="location.href='userlogin.html'">Citizen Login</button>
+</div>
+
+</div>
+
+<img src="{{ url_for('static', filename='images/2950659.png') }}">
+
+</section>
+
+
+<div class="info-strip">
+
+<div class="info-box">
+<h3>24/7 Access</h3>
+<p>Submit complaints anytime</p>
+</div>
+
+<div class="info-box">
+<h3>AI Powered</h3>
+<p>Smart complaint routing</p>
+</div>
+
+<div class="info-box">
+<h3>Transparent</h3>
+<p>Track complaint status</p>
+</div>
+
+</div>
+
+
+<footer>
+© 2026 AI Complaint Management System | Digital Services
+</footer>
+
+</body>
+</html>

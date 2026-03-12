@@ -1,6 +1,8 @@
 import requests
 import os
 from datetime import datetime
+from ai_agent import analyze_complaint
+
 
 API_KEY = os.getenv("WEATHER_API_KEY")
 
@@ -81,6 +83,9 @@ def estimate_crowd_level():
 # ===============================
 # 🌍 MAIN INTELLIGENCE ENGINE
 # ===============================
+# ===============================
+# 🌍 MAIN INTELLIGENCE ENGINE
+# ===============================
 def civic_intelligence(lat, lon):
     city = get_city_from_coords(lat, lon)
 
@@ -98,4 +103,34 @@ def civic_intelligence(lat, lon):
         "alerts": alerts,
         "crowd_level": crowd,
         "best_time_for_work": "Early morning" if crowd.startswith("HIGH") else "Now is good"
+    }
+
+
+# ===============================
+# 🤖 AUTO COMPLAINT GENERATOR
+# ===============================
+def intelligence_to_complaint(lat, lon):
+    data = civic_intelligence(lat, lon)
+
+    complaint = None
+
+    # 🌧 Flood risk
+    if data["risk_level"] == "HIGH" and "waterlogging" in " ".join(data["alerts"]).lower():
+        complaint = f"Waterlogging risk detected in {data['city']} due to rain"
+
+    # 🔥 Heatwave
+    elif data["risk_level"] == "HIGH" and data["temperature"] > 38:
+        complaint = f"Extreme heatwave in {data['city']} — water supply and public safety risk"
+
+    # 🌪 Storm
+    elif any("storm" in a.lower() for a in data["alerts"]):
+        complaint = f"Storm warning in {data['city']} — possible road damage and hazards"
+
+    if complaint:
+        print("🤖 Intelligence Complaint:", complaint)
+        return analyze_complaint(complaint, lat, lon)
+
+    return {
+        "status": "no_action_required",
+        "intelligence": data
     }

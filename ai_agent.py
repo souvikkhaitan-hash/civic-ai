@@ -1,137 +1,102 @@
-import json
+print("[INFO] AI ENGINE v3.1 LOADED")
 
-from database import (
-    save_complaint,
-    find_similar_open_complaint,
-    escalate_complaint
-)
-
-DEMO_MODE = False
-
-# System user for AI-generated complaints
 SYSTEM_USER_ID = 0
 
-
-def analyze_complaint(complaint_text):
+def analyze_complaint(complaint_text, lat=None, lon=None):
+    text = complaint_text.lower()
     score = 0
     explanation = []
-    text = complaint_text.lower()
+    department = "General"
 
-    # ==============================
-    # 🔍 SMART SCORING ENGINE
-    # ==============================
+    # =========================
+    # 🚨 EMERGENCY LAYER
+    # =========================
+    if any(w in text for w in ["ambulance", "dead", "death", "electrocution"]):
+        score += 50
+        explanation.append("Emergency keyword (+50)")
 
-    water_keywords = [
-        "water", "flood", "flooded",
-        "drain", "overflow", "logging"
-    ]
+    if "accident" in text:
+        score += 25
+        explanation.append("Accident risk (+25)")
 
-    # Flooding detection
-    if any(w in text for w in water_keywords):
+    # =========================
+    # 🌊 WATER / FLOOD
+    # =========================
+    water_words = ["water", "flood", "drain", "overflow", "waterlogging", "sewage"]
+    if any(w in text for w in water_words):
+        score += 20
+        department = "Drainage"
+        explanation.append("Water/drainage issue (+20)")
+
+    # =========================
+    # 🛣 ROAD INFRA
+    # =========================
+    if any(w in text for w in ["pothole", "road damage", "bad road"]):
+        score += 30
+        department = "Roads"
+        explanation.append("Road hazard (+30)")
+
+    # Accident + pothole combo boost
+    if "pothole" in text and "accident" in text:
         score += 15
-        explanation.append("Detected flooding/water issue (+15)")
+        explanation.append("Accident caused by pothole (+15)")
 
-    # Traffic disruption
-    if any(w in text for w in ["traffic", "road", "vehicles", "blocked"]):
+    # =========================
+    # 🚦 TRAFFIC
+    # =========================
+    if any(w in text for w in ["traffic", "jam", "blocked", "congestion"]):
+        score += 15
+        explanation.append("Traffic disruption (+15)")
+
+    # =========================
+    # 🗑 SANITATION
+    # =========================
+    if any(w in text for w in ["garbage", "waste", "trash", "dump"]):
+        score += 25
+        department = "Sanitation"
+        explanation.append("Garbage hygiene risk (+25)")
+
+    # =========================
+    # ⚡ ELECTRIC
+    # =========================
+    if any(w in text for w in ["street light", "no light", "dark road", "power cut"]):
+        score += 20
+        department = "Electric"
+        explanation.append("Lighting/electric risk (+20)")
+
+    # =========================
+    # 🧠 SEVERITY BOOSTERS
+    # =========================
+    if any(w in text for w in ["school", "hospital", "market"]):
         score += 10
-        explanation.append("Traffic disruption detected (+10)")
+        explanation.append("Public hotspot (+10)")
 
-    # Emergency zones
-    if "ambulance" in text or "hospital" in text:
-        score += 40
-        explanation.append("Emergency zone detected (+40)")
+    if any(w in text for w in ["many", "multiple", "daily", "everyday", "for days"]):
+        score += 10
+        explanation.append("Recurring issue (+10)")
 
-    # Base civic risk
+    # =========================
+    # BASE CIVIC RISK
+    # =========================
     if score > 0:
         score += 5
-        explanation.append("Base civic risk added (+5)")
+        explanation.append("Base civic risk (+5)")
 
-    # ==============================
-    # 🎯 PRIORITY MAPPING
-    # ==============================
+    # =========================
+    # PRIORITY MAPPING
+    # =========================
     if score >= 70:
         priority = "HIGH"
-        status = "IN_PROGRESS"
-    elif score >= 40:
+    elif score >= 35:
         priority = "MEDIUM"
-        status = "OPEN"
     else:
         priority = "LOW"
-        status = "OPEN"
-
-    # ==============================
-    # 🏢 DEPARTMENT DETECTION
-    # ==============================
-    department = "Drainage" if any(w in text for w in water_keywords) else "General"
-
-    # ==============================
-    # 🔁 DUPLICATE DETECTION
-    # ==============================
-    keyword = None
-    for w in water_keywords:
-        if w in text:
-            keyword = w
-            break
-
-    existing = find_similar_open_complaint(keyword) if keyword else None
-
-    # ==============================
-    # 🔁 MERGE DUPLICATES (FIXED)
-    # ==============================
-    if existing:
-        existing_id = existing["id"]
-        old_score = existing["risk_score"]
-        old_explanation = existing["explanation"]
-
-        # Safe int conversion
-        try:
-            old_score = int(old_score)
-        except:
-            old_score = 0
-
-        # Smart merge with cap (PRODUCTION SAFE)
-        merged_score = old_score + int(score * 0.5)
-
-        # HARD CAP (prevents 1000+ scores)
-        new_score = min(merged_score, 100)
-
-        # Safe JSON load
-        try:
-            old_exp_list = json.loads(old_explanation) if old_explanation else []
-        except:
-            old_exp_list = []
-
-        combined_explanation = old_exp_list + explanation
-        combined_explanation.append("Merged duplicate complaint")
-
-        escalate_complaint(existing_id, new_score, combined_explanation)
-
-        return {
-            "message": "Duplicate complaint merged",
-            "complaint_id": existing_id,
-            "risk_score": new_score,
-            "status": "IN_PROGRESS",
-            "department": department,
-            "priority": "HIGH"
-        }
-
-    # ==============================
-    # 🆕 NEW COMPLAINT
-    # ==============================
-    save_complaint(
-        complaint_text,
-        department,
-        priority,
-        score,
-        explanation,
-        SYSTEM_USER_ID  # AI system complaints
-    )
 
     return {
-        "complaint": complaint_text,
         "department": department,
         "priority": priority,
         "risk_score": score,
-        "status": status,
-        "explanation": explanation
+        "explanation": explanation,
+        "latitude": lat,
+        "longitude": lon
     }

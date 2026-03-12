@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Dashboard | AI Complaint Portal</title>
+
+  <script>
+    const token = localStorage.getItem("user_token");
+    if (!token) {
+      alert("Login required");
+      window.location.href = "/user-login-ui";
+    }
+  </script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    :root {
+      --primary: #0b3d91;
+      --secondary: #1f5fbf;
+      --accent: #c79a2b;
+      --bg: #f1f4f8;
+      --green: #2e7d32;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    header {
+      background: var(--primary);
+      color: white;
+      padding: 15px 60px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 4px solid var(--accent);
+    }
+
+    nav ul {
+      display: flex;
+      gap: 25px;
+      list-style: none;
+    }
+
+    nav a {
+      color: white;
+      text-decoration: none;
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+    }
+
+    .dashboard {
+      flex: 1;
+      padding: 40px 80px;
+    }
+
+    .subtitle {
+      color: #555;
+      margin-bottom: 30px;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .add-btn {
+      background: var(--green);
+      color: white;
+      padding: 12px 18px;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+
+    th {
+      background: #eef2f7;
+      padding: 14px;
+      text-align: left;
+    }
+
+    td {
+      padding: 14px;
+      border-top: 1px solid #eee;
+    }
+
+    .status {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .pending {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .progress {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .resolved {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    footer {
+      background: #081f4b;
+      color: white;
+      text-align: center;
+      padding: 15px;
+    }
+
+    /* MODAL */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-box {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      width: 400px;
+    }
+
+    .modal textarea {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+    }
+
+    .modal-actions {
+      margin-top: 10px;
+      text-align: right;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div>Advanced Complaint Management Portal</div>
+    <nav>
+      <ul>
+        <li><a href="/user-dashboard">Dashboard</a></li>
+        <li><a href="#" onclick="logoutUser()">Logout</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <section class="dashboard">
+    <h1>Citizen Dashboard</h1>
+    <p class="subtitle">Manage and track your complaints</p>
+
+    <div class="actions">
+      <h3>Recent Complaints</h3>
+      <button class="add-btn" onclick="openModal()">+ Add Complaint</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Complaint</th>
+          <th>Department</th>
+          <th>Status</th>
+          <th>Proof</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="complaint-table">
+        <tr>
+          <td colspan="7">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>© 2026 AI Complaint Management System</footer>
+
+  <!-- MODAL -->
+  <div id="complaintModal" class="modal">
+    <div class="modal-box">
+      <h3>Submit Complaint</h3>
+      <input id="manualLocation" type="text" placeholder="Enter location (optional)"
+        style="width:100%;padding:10px;margin-top:10px;">
+      <textarea id="complaintText" rows="4" placeholder="Describe your issue..."></textarea>
+      <div style="margin-top:10px;">
+        <label style="font-size:12px;color:#666;">Attach Image (JPG, PNG, JPEG - Max 5MB):</label>
+        <input id="complaintImage" type="file" accept="image/*" style="width:100%;margin-top:5px;">
+      </div>
+      <div class="modal-actions">
+        <button onclick="submitComplaint()">Submit</button>
+        <button onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================= LOAD COMPLAINTS =================
+    async function loadUserComplaints() {
+      const res = await fetch("/user/complaints", {
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem("user_token");
+        alert("Session expired");
+        window.location.href = "/user-login-ui";
+        return;
+      }
+
+      const data = await res.json();
+      const table = document.getElementById("complaint-table");
+      table.innerHTML = "";
+
+      if (!data.length) {
+        table.innerHTML = "<tr><td colspan='7'>No complaints yet</td></tr>";
+        return;
+      }
+
+      data.forEach(c => {
+        let cls = "pending";
+        if (c.status === "IN_PROGRESS") cls = "progress";
+        if (c.status === "RESOLVED") cls = "resolved";
+
+        table.innerHTML += `
+<tr>
+  <td>#${c.id}</td>
+  <td>${c.complaint}</td>
+  <td>${c.department}</td>
+  <td><span class="status ${cls}">${c.status}</span></td>
+  <td>${c.image_path ? `<a href="/static/${c.image_path}" target="_blank">View</a>` : "No proof"}</td>
+  <td>${c.created_at}</td>
+  <td>
+    ${c.status === "OPEN" ? `<button onclick="deleteComplaint(${c.id})">Delete</button>` : ""}
+  </td>
+</tr>`;
+      });
+    }
+
+    // ================= MODAL =================
+    function openModal() { document.getElementById("complaintModal").style.display = "flex"; }
+    function closeModal() { document.getElementById("complaintModal").style.display = "none"; }
+
+    // ================= SUBMIT =================
+    async function submitComplaint() {
+      const text = document.getElementById("complaintText").value;
+      const manual = document.getElementById("manualLocation").value;
+      const imageFile = document.getElementById("complaintImage").files[0];
+
+      if (!text) return alert("Enter complaint");
+
+      if (imageFile && imageFile.size > 5 * 1024 * 1024) {
+        return alert("File size too large (max 5MB)");
+      }
+
+      const formData = new FormData();
+      formData.append("description", text);
+      formData.append("location_text", manual);
+      if (imageFile) formData.append("image", imageFile);
+
+      navigator.geolocation.getCurrentPosition(async pos => {
+        formData.append("latitude", pos.coords.latitude);
+        formData.append("longitude", pos.coords.longitude);
+        await sendComplaint(formData);
+      }, async () => {
+        await sendComplaint(formData);
+      });
+    }
+
+    async function sendComplaint(formData) {
+      const res = await fetch("/submit", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token
+        },
+        body: formData
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert("Complaint submitted!");
+        loadUserComplaints();
+        closeModal();
+      } else {
+        alert("Failed");
+      }
+    }
+
+    async function deleteComplaint(id) {
+      if (!confirm("Delete this complaint?")) return;
+
+      const res = await fetch(`/user/delete/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer " + token
+        }
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert("Deleted successfully");
+        loadUserComplaints();
+      } else {
+        alert(result.error || "Delete failed");
+      }
+    }
+
+    // ================= LOGOUT =================
+    function logoutUser() {
+      localStorage.removeItem("user_token");
+      window.location.href = "/user-login-ui";
+    }
+
+    // AUTO LOAD
+    loadUserComplaints();
+    setInterval(loadUserComplaints, 10000);
+
+    // Modular Notifications Init
+    if (window.initNotifs) window.initNotifs(token);
+  </script>
+
+</body>
+
+</html>

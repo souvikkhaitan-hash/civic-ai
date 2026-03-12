@@ -1,57 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Complaint Admin Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Civic AI Command Center</title>
 
-  <!-- Flask static CSS -->
+  <!-- CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 
 <body>
 
-<header class="header">
-  <div class="header-title">
-    🛡️ Complaint Admin
+  <div class="container">
+    <header class="header">
+      <div class="header-title">🏙️ Civic AI Command Center</div>
+      <button onclick="doLogout()"><span style="color: #f59e0b; font-weight: bold;">|</span> Logout</button>
+    </header>
+
+    <main class="main">
+      <!-- ================= SMART PANEL ================= -->
+      <div class="smart-panel">
+
+        <!-- WEATHER CARD -->
+        <div class="weather-card">
+          <h3>🌤 Weather AI</h3>
+          <p>Temp: <span id="weather-temp">--</span></p>
+          <p>Condition: <span id="weather-condition">--</span></p>
+          <p>Risk: <b id="weather-risk">--</b></p>
+          <div id="location-badge" class="badge-region" style="display: none;">📍 Region Synced</div>
+        </div>
+
+        <!-- MAP CONTAINER -->
+        <div class="map-container">
+          <div id="map"></div>
+        </div>
+
+      </div>
+
+      <!-- ================= AI CITY SUMMARY ================= -->
+      <div class="summary-card" id="city-summary-card">
+        <h3>📊 AI City Summary</h3>
+        <div id="summary-content" class="summary-grid">
+          <div class="summary-item">Calculating city-wide insights...</div>
+        </div>
+      </div>
+
+      <!-- ================= STATS ================= -->
+      <div class="stats-row">
+        <span>Total: <b id="total-count">0</b></span>
+        <span>Open: <b id="open-count">0</b></span>
+        <span>In Progress: <b id="progress-count">0</b></span>
+        <span>Resolved: <b id="resolved-count">0</b></span>
+      </div>
+
+      <!-- SEARCH & TOOLBAR -->
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input placeholder="Search..." oninput="filterTable(this.value)">
+        </div>
+      </div>
+
+      <!-- ================= TABLE ================= -->
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Complaint</th>
+              <th>Department</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Source</th>
+              <th>Proof</th>
+              <th>Risk</th>
+              <th>Confidence</th>
+              <th>Date</th>
+              <th>SLA Risk</th>
+              <th>Location</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </main>
   </div>
-  <button onclick="doLogout()">🚪 Logout</button>
-</header>
 
-<div class="main">
+  <!-- ================= LIBRARIES ================= -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- STATS -->
-  <div class="stats-grid">
-    <div>Total: <span id="total-count">0</span></div>
-    <div>Open: <span id="open-count">0</span></div>
-    <div>In Progress: <span id="progress-count">0</span></div>
-    <div>Resolved: <span id="resolved-count">0</span></div>
-  </div>
-
-  <!-- SEARCH -->
-  <input placeholder="Search..." oninput="filterTable(this.value)">
-
-  <!-- TABLE -->
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Complaint</th>
-        <th>Department</th>
-        <th>Priority</th>
-        <th>Status</th>
-        <th>Risk</th>
-        <th>Date</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="table-body"></tbody>
-  </table>
-
-</div>
-
-<!-- Flask static JS -->
-<script src="{{ url_for('static', filename='admin.js') }}"></script>
+  <!-- ================= ADMIN LOGIC ================= -->
+  <script src="/static/admin.js"></script>
 
 </body>
+
 </html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Citizen Login | AI Complaint Portal</title>
+  <script>
+    // Auto redirect if already logged in
+    if (localStorage.getItem("user_token")) {
+      window.location.href = "/user-dashboard";
+    }
+  </script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    :root {
+      --primary: #0b3d91;
+      --secondary: #1f5fbf;
+      --accent: #c79a2b;
+      --bg: #f1f4f8;
+      --text: #333;
+      --green: #2e7d32;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    /* HEADER */
+
+    header {
+      background: var(--primary);
+      color: white;
+      padding: 15px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 4px solid var(--accent);
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    nav ul {
+      display: flex;
+      list-style: none;
+      gap: 25px;
+    }
+
+    /* LOGIN SECTION */
+
+    .login-section {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+    }
+
+    .login-card {
+      background: white;
+      width: 400px;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      position: relative;
+      z-index: 100;
+    }
+
+    .login-card h2 {
+      text-align: center;
+      color: var(--primary);
+      margin-bottom: 25px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #444;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+      background: white;
+      color: #333;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--secondary);
+    }
+
+    /* BUTTON */
+
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--secondary);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    .login-btn:hover {
+      background: #174a96;
+    }
+
+    .extra {
+      text-align: center;
+      margin-top: 15px;
+      font-size: 14px;
+    }
+
+    .extra a {
+      color: var(--secondary);
+      text-decoration: none;
+    }
+
+    /* FOOTER */
+
+    footer {
+      background: #081f4b;
+      color: white;
+      text-align: center;
+      padding: 18px;
+      margin-top: auto;
+      font-size: 14px;
+    }
+
+    nav ul {
+      display: flex;
+      list-style: none;
+      gap: 25px;
+    }
+
+    nav a {
+      text-decoration: none;
+      color: white;
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="logo">Advanced Complaint Management Portal</div>
+
+    <nav>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/user-dashboard">Dashboard</a></li>
+        <li><a href="/user-login-ui">User Login</a></li>
+        <li><a href="/admin-login-ui">Officer Login</a></li>
+        <li><a href="/register-ui">Register</a></li>
+      </ul>
+    </nav>
+  </header>
+
+
+  <section class="login-section">
+
+    <div class="login-card">
+
+      <h2>Citizen Login</h2>
+
+      <form onsubmit="loginUser(event)">
+
+        <div class="form-group">
+          <label for="email">Email / Username</label>
+          <input id="email" type="text" placeholder="Enter your email" required autofocus>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" type="password" placeholder="Enter your password" required>
+        </div>
+
+        <button type="submit" class="login-btn">Login</button>
+
+        <div class="extra">
+          <p>New user? <a href="/register-ui">Register here</a></p>
+        </div>
+
+      </form>
+
+    </div>
+
+  </section>
+
+
+  <footer>
+    © 2026 AI Complaint Management System | Digital Services
+  </footer>
+  <script>
+    async function loginUser(e) {
+      e.preventDefault(); // stop page reload
+
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert(data.error || "Login failed");
+          return;
+        }
+
+        // Save JWT
+        localStorage.clear(); // remove old tokens
+        localStorage.setItem("user_token", data.token);
+
+        // Go to dashboard
+        window.location.href = "/user-dashboard";
+
+      } catch (err) {
+        alert("Server error");
+        console.error(err);
+      }
+    }
+  </script>
+
+</body>
+
+</html>
