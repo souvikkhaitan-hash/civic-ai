@@ -43,6 +43,7 @@ app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
+
 # Ensure folders
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -375,4 +376,7 @@ if __name__ == "__main__":
         start_reddit_scheduler()
         start_news_scheduler()
     
-    app.run(debug=True, use_reloader=True)
+    import os
+
+port = int(os.environ.get("PORT", 10000))
+app.run(host="0.0.0.0", port=port, debug=True)
