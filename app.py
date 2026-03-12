@@ -37,6 +37,21 @@ from werkzeug.utils import secure_filename
 load_dotenv()
 app = Flask(__name__, template_folder="templates", static_folder="static")
 print("Flask app initialized successfully.")
+
+# Ensure database exists when running on Render/Gunicorn
+with app.app_context():
+    init_db()
+
+# Start background schedulers when running on Render
+if os.environ.get("RENDER"):
+    def start_background():
+        print("[SYS] Starting background agents...")
+        start_scheduler()
+        start_reddit_scheduler()
+        start_news_scheduler()
+
+    threading.Thread(target=start_background, daemon=True).start()
+    
 # Configuration
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
