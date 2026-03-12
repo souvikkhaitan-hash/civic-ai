@@ -39,12 +39,14 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 print("[SYS] Initializing database...")
 init_db()
 
-@app.before_first_request
 def start_background_agents():
     print("[SYS] Starting background agents...")
     threading.Thread(target=start_scheduler, daemon=True).start()
     threading.Thread(target=start_reddit_scheduler, daemon=True).start()
     threading.Thread(target=start_news_scheduler, daemon=True).start()
+
+# start them immediately
+start_background_agents()
 # Configuration
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
@@ -372,3 +374,7 @@ def user_delete(cid):
     conn.close()
 
     return jsonify({"success": True})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
