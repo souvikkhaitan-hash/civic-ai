@@ -1,3 +1,4 @@
+print("🔥 STEP 1: FILE STARTED")
 from flask import Flask, request, jsonify, render_template, session, redirect
 import os
 import requests
@@ -36,13 +37,13 @@ from scheduler import start_scheduler
 from utils.response import success
 from utils.geocoder import geocode
 from werkzeug.utils import secure_filename
+print("🔥 STEP 2: IMPORTS DONE")
 
 # Configuration
 load_dotenv()
+print("🔥 STEP 3: DOTENV LOADED")
 app = Flask(__name__, template_folder="templates", static_folder="static")
-print("[SYS] Initializing database...")
-init_db()
-print("TOMTOM KEY LOADED:", os.getenv("TOMTOM_API_KEY"))
+print("🔥 STEP 4: APP CREATED")
 def start_background_agents():
     print("[SYS] Starting background agents...")
     threading.Thread(target=start_scheduler, daemon=True).start()
@@ -899,6 +900,7 @@ def mark_notifications_read():
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
 
 if __name__ == "__main__":
     from database import init_db
