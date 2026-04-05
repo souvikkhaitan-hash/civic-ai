@@ -50,7 +50,6 @@ def start_background_agents():
     threading.Thread(target=start_news_scheduler, daemon=True).start()
 
 # start them immediately
-start_background_agents()
 # Configuration
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
@@ -902,6 +901,8 @@ def mark_notifications_read():
     return jsonify({"success": True})
 
 if __name__ == "__main__":
-    import os
+    from database import init_db
+    init_db()
+    start_background_agents()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
