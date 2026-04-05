@@ -1,10 +1,10 @@
 from functools import wraps
-from flask import session, jsonify
+from flask import session, jsonify, redirect
 
 def admin_required(f):
-    @wraps(f)
     def wrapper(*args, **kwargs):
-        if not session.get("admin"):
-            return jsonify({"error": "Admin login required"}), 401
+        if "admin" not in session:
+            return redirect("/admin-login")
         return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
     return wrapper

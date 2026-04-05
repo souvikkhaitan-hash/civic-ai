@@ -127,7 +127,34 @@
     <div class="legend">Red = High | Yellow = Medium | Green = Low</div>
   </div>
   <script>
-    const map = L.map('map').setView([22.5726, 88.3639], 12);
+    // INJECTIVE CONFIG
+    const __region = JSON.parse('{{ region | tojson | safe }}');
+    const __center = JSON.parse('{{ center | tojson | safe }}');
+
+    window.ADMIN_CONFIG = {
+      region: __region,
+      center: __center
+    };
+
+    console.log("CENTER FROM BACKEND:", __center);
+
+    const config = window.ADMIN_CONFIG || {};
+
+    // 1. FORCE MAP CENTER
+    let centerCoords = [12.9716, 77.5946];
+    let zoomLevel = 12;
+
+    if (__center && __center.length === 2) {
+      centerCoords = __center;
+      zoomLevel = 15;
+    }
+
+    const map = L.map('map');
+    map.setView(centerCoords, zoomLevel);
+
+    map.on('click', function (e) {
+      checkTraffic(e.latlng.lat, e.latlng.lng);
+    });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
@@ -147,9 +174,18 @@
       return 'badge low';
     }
 
+    let trafficPoints = [];
+    let complaintsData = [];
+    let trafficLayer = L.layerGroup().addTo(map);
+
     async function loadComplaints() {
-      const res = await fetch('/admin/complaints');
+      const state = __region ? __region.state : null;
+      const city = __region ? __region.city : null;
+      const area = __region ? __region.area : null;
+
+      const res = await fetch(`/admin/complaints?state=${state || ''}&city=${city || ''}&area=${area || ''}`);
       const data = await res.json();
+      complaintsData = data;
 
       data.forEach(c => {
         const card = document.createElement('div');
@@ -158,6 +194,7 @@
           <div><b>${c.complaint}</b></div>
           <div class="badge ${c.priority.toLowerCase()}">${c.priority}</div>
           <div style="font-size:12px;margin-top:6px;opacity:0.7">
+            ${c.location_source === "GPS" ? "Live Location" : (c.address || "Unknown")}<br>
             Dept: ${c.department}<br>
             Risk Score: ${c.risk_score}
           </div>
@@ -165,7 +202,7 @@
 
         complaintsList.appendChild(card);
 
-        if (c.latitude && c.longitude) {
+        if (c.latitude != null && c.longitude != null) {
           const marker = L.circleMarker([c.latitude, c.longitude], {
             radius: 10,
             color: priorityColor(c.priority),
@@ -173,10 +210,11 @@
           }).addTo(map);
 
           marker.bindPopup(`
-            <b>${c.complaint}</b><br>
-            Priority: ${c.priority}<br>
-            Department: ${c.department}
-          `);
+    <b>${c.complaint}</b><br>
+    Priority: ${c.priority}<br>
+    ${c.location_source === "GPS" ? "Live Location" : (c.address || "Unknown")}<br>
+    Department: ${c.department}
+  `);
 
           card.onclick = () => {
             map.setView([c.latitude, c.longitude], 15);
@@ -184,10 +222,11 @@
           };
         }
       });
+
+      detectHighRiskZones();
     }
 
     loadComplaints();
-
 
     async function loadWeather() {
       const res = await fetch("/api/weather");
@@ -201,6 +240,107 @@
     }
 
     loadWeather();
+
+    function loadAreaTraffic() {
+      // USE REGION CENTER
+      const center = {
+        lat: centerCoords[0],
+        lng: centerCoords[1]
+      };
+
+      // IMPROVE TRAFFIC GRID
+      const step = 0.01;
+      const points = [];
+
+      // 9-point Grid for better coverage
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          points.push([center.lat + (i * step), center.lng + (j * step)]);
+        }
+      }
+
+      trafficPoints = [];
+      trafficLayer.clearLayers();
+
+      points.forEach(([lat, lng]) => {
+        fetch(`/api/traffic?lat=${lat}&lon=${lng}`)
+          .then(res => res.json())
+          .then(data => {
+            // ADD DEBUG FOR TRAFFIC API
+            console.log("Traffic Data:", data);
+
+            trafficPoints.push({ lat, lng, congestion: data.congestion });
+
+            let color = "green";
+            if (data.congestion === "HIGH") color = "red";
+            else if (data.congestion === "MEDIUM") color = "orange";
+
+            // Draw Polyline for visual road flow
+            if (data.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+              L.polyline(data.coordinates, {
+                color: color,
+                weight: 8,
+                opacity: 1
+              }).addTo(trafficLayer)
+                .bindPopup(`<b>Traffic:</b> ${data.congestion}<br>Speed: ${data.speed}`);
+            } else {
+              L.circleMarker([lat, lng], {
+                radius: 6,
+                color: color,
+                fillOpacity: 0.7
+              }).addTo(trafficLayer)
+                .bindPopup(`<b>Traffic:</b> ${data.congestion}<br>Speed: ${data.speed}`);
+            }
+
+            detectHighRiskZones();
+          })
+          .catch(err => console.log("Traffic error:", err));
+      });
+    }
+
+    function detectHighRiskZones() {
+      if (!complaintsData.length || !trafficPoints.length) return;
+
+      complaintsData.forEach(c => {
+        trafficPoints.forEach(t => {
+          const distance = Math.sqrt(
+            Math.pow(c.latitude - t.lat, 2) +
+            Math.pow(c.longitude - t.lng, 2)
+          );
+
+          if (distance < 0.003 && t.congestion === "HIGH") {
+            L.circle([c.latitude, c.longitude], {
+              radius: 80,
+              color: "red",
+              fillOpacity: 0.3,
+              weight: 2
+            }).addTo(map)
+              .bindPopup("🚨 <b>HIGH RISK ZONE</b><br>Detected: High Traffic + Civic Issue");
+          }
+        });
+      });
+    }
+
+    // FIX TRAFFIC LOAD TIMING
+    setTimeout(() => {
+      loadAreaTraffic();
+    }, 1000);
+
+    // ADD AUTO REFRESH ON MAP MOVE
+    map.on('moveend', () => {
+      loadAreaTraffic();
+    });
+
+    // Refresh every 30 seconds
+    setInterval(loadAreaTraffic, 30000);
+
+    function checkTraffic(lat, lng) {
+      fetch(`/api/traffic?lat=${lat}&lon=${lng}`)
+        .then(res => res.json())
+        .then(data => {
+          console.log("Point Traffic:", data);
+        });
+    }
   </script>
 </body>
 

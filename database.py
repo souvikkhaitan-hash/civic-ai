@@ -3,6 +3,8 @@ import json
 from utils.similarity import is_similar
 import os
 from sentence_transformers import SentenceTransformer, util
+from datetime import datetime
+import ai_agent
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_NAME = os.path.join(BASE_DIR, "civic_ai.db")
@@ -44,7 +46,13 @@ def init_db():
         is_duplicate INTEGER DEFAULT 0,
         image_path TEXT DEFAULT NULL,
         address TEXT DEFAULT NULL,
-        source TEXT DEFAULT 'user'
+        state TEXT DEFAULT 'Unknown',
+        city TEXT DEFAULT 'Unknown',
+        area TEXT DEFAULT 'Unknown',
+        source TEXT DEFAULT 'user',
+        assigned_officer TEXT DEFAULT 'Panchayat Officer',
+        translated_text TEXT,
+        mobile TEXT DEFAULT NULL
     )
     """)
 
@@ -65,6 +73,61 @@ def init_db():
         cur.execute("ALTER TABLE complaints ADD COLUMN source TEXT DEFAULT 'user'")
     except sqlite3.OperationalError:
         pass # Already exists
+
+    # --- MIGRATION: Add state/city/area if missing ---
+    for col in ["state", "city", "area"]:
+        try:
+            cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} TEXT DEFAULT 'Unknown'")
+        except sqlite3.OperationalError:
+            pass
+
+    # --- MIGRATION: Add assigned_officer if missing ---
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN assigned_officer TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # --- MIGRATION: Add translated_text if missing ---
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN translated_text TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # --- MIGRATION: Add mobile if missing ---
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN mobile TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # --- MIGRATION: Add hidden flags for role-based deletion ---
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN hidden_from_admin INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN hidden_from_officer INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    # --- MIGRATION: Add notifications table ---
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        officer_id INTEGER,
+        message TEXT,
+        type TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # --- MIGRATION: Add location_source if missing ---
+    try:
+        cur.execute("ALTER TABLE complaints ADD COLUMN location_source TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     # ======================
     # USERS TABLE
@@ -92,6 +155,21 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # --- SEED OFFICERS ---
+    cur.execute("SELECT COUNT(*) FROM officers")
+    count = cur.fetchone()[0]
+    if count == 0:
+        cur.execute("""
+        INSERT INTO officers (name, email, password, department)
+        VALUES
+        ('Sanitation Worker', 'sanitation@test.com', '1234', 'Sanitation Worker'),
+        ('Road Inspector', 'road@test.com', '1234', 'Road Inspector'),
+        ('Panchayat Officer', 'panchayat@test.com', '1234', 'Panchayat Officer'),
+        ('Water Officer', 'water@test.com', '1234', 'Water Officer'),
+        ('Electricity Board', 'electricity@test.com', '1234', 'Electricity Board')
+        """)
+        print("[DB] Seeded test officers into the database.")
 
     # ======================
     # ADMINS TABLE
@@ -162,45 +240,81 @@ def find_duplicate_master(text):
     conn.close()
     return None
 
+def assign_officer(department):
+    mapping = {
+        "Sanitation": "Sanitation Worker",
+        "Roads": "Road Inspector",
+        "Water": "Water Officer",
+        "Electricity": "Electricity Board",
+        "Drainage": "Drainage Officer",
+        "General": "Panchayat Officer"
+    }
+    return mapping.get(department, "Panchayat Officer")
+
 # ==============================
 # SAVE COMPLAINT
 # ==============================
-def save_complaint(text, dept, priority, risk, explanation, user_id, lat=None, lon=None, manual_location=None, image_path=None, address=None, source="user"):
+def save_complaint(text, dept, priority, risk, explanation, user_id, lat=None, lon=None, manual_location=None, image_path=None, address=None, state="Unknown", city="Unknown", area="Unknown", source="user", translated_text=None, mobile=None, location_source="UNKNOWN"):
+    print("DEBUG GPS BEFORE SAVE:",lat,lon)
     conn = get_connection()
     cur = conn.cursor()
 
     master_id = find_duplicate_master(text)
+    officer = assign_officer(dept)
+    
+    # Use translated text for risk if available
+    processing_text = translated_text if translated_text else text
+    
+    # --------------------------
+    # RECALCULATE INTELLIGENT RISK
+    # --------------------------
+    duplicate_count = 0
+    if master_id:
+        cur.execute("SELECT COUNT(*) FROM complaints WHERE master_id = ? OR id = ?", (master_id, master_id))
+        duplicate_count = cur.fetchone()[0]
+    
+    risk, reasons = ai_agent.calculate_risk(
+        processing_text,
+        duplicate_count=duplicate_count,
+        created_at=datetime.now(),
+        department=dept,
+        source=source
+    )
+    
+    # Use dynamic reasons instead of whatever was passed
+    explanation = str(reasons)
+    
+    if risk >= 70:
+        priority = "HIGH"
+    elif risk >= 40:
+        priority = "MEDIUM"
+    else:
+        priority = "LOW"
 
     if master_id:
         # Save duplicate
         cur.execute("""
             INSERT INTO complaints
-            (complaint, department, priority, risk_score, explanation, user_id, master_id, is_duplicate, latitude, longitude, manual_location, image_path, address, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
-        """, (text, dept, priority, risk, str(explanation), user_id, master_id, lat, lon, manual_location, image_path, address, source))
-
-    
-        conn.commit()
-        conn.close()
-        return master_id
-
+            (complaint, department, priority, risk_score, explanation, user_id, master_id, is_duplicate, latitude, longitude, manual_location, image_path, address, state, city, area, source, assigned_officer, translated_text, mobile, location_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (text, dept, priority, risk, str(explanation), user_id, master_id, lat, lon, manual_location, image_path, address, state, city, area, source, officer, translated_text, mobile, location_source))
     else:
         # Save master complaint
         cur.execute("""
             INSERT INTO complaints
-            (complaint, department, priority, risk_score, explanation, user_id, latitude, longitude, manual_location, image_path, address, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (text, dept, priority, risk, str(explanation), user_id, lat, lon, manual_location, image_path, address, source))
+            (complaint, department, priority, risk_score, explanation, user_id, latitude, longitude, manual_location, image_path, address, state, city, area, source, assigned_officer, translated_text, mobile, location_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (text, dept, priority, risk, str(explanation), user_id, lat, lon, manual_location, image_path, address, state, city, area, source, officer, translated_text, mobile, location_source))
 
-        conn.commit()
-        new_id = cur.lastrowid
-        conn.close()
-        return new_id
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
 
 def update_complaint_address(complaint_id, address):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE complaints SET address = ? WHERE id = ?", (address, complaint_id))
+    cur.execute("UPDATE complaints SET address = ?, location_source = 'GPS' WHERE id = ?", (address, complaint_id))
     conn.commit()
     conn.close()
 
@@ -336,36 +450,37 @@ def enforce_sla():
 # ==============================
 # ADMIN DASHBOARD
 # ==============================
-def get_all_complaints():
+def get_all_complaints(state=None, city=None, area=None):
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    cur.execute("""
+    query = """
         SELECT 
-            c.id,
-            c.complaint,
-            c.department,
-            c.priority,
-            c.status,
-            c.risk_score,
-            c.explanation,
-            c.created_at,
-            c.latitude,
-            c.longitude,
-            c.manual_location,
-            c.address,
-            c.user_id,
-            c.source,
-            COALESCE(c.image_path, MAX(d.image_path)) as image_path,
-            COUNT(d.id)+1 as count
-        FROM complaints c
-        LEFT JOIN complaints d ON d.master_id=c.id
-        WHERE c.is_duplicate=0
-        GROUP BY c.id
-        ORDER BY c.created_at DESC
-    """)
+            id, complaint, department, priority, status,
+            risk_score, explanation, created_at,
+            latitude, longitude, manual_location, address,
+            user_id, source, state, city, area, assigned_officer,
+            translated_text, image_path, location_source
+        FROM complaints
+        WHERE is_duplicate = 0 AND hidden_from_admin = 0
+    """
 
+    params = []
+
+    if state:
+        query += " AND state = ?"
+        params.append(state)
+    if city:
+        query += " AND city = ?"
+        params.append(city)
+    if area:
+        query += " AND area = ?"
+        params.append(area)
+
+    query += " ORDER BY created_at DESC"
+
+    cur.execute(query, tuple(params))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -378,7 +493,7 @@ def get_user_complaints(user_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, complaint, department, priority, status, risk_score, created_at, image_path, address
+        SELECT id, complaint, department, priority, status, risk_score, created_at, image_path, address, state, city, area
         FROM complaints
         WHERE user_id=?
         ORDER BY created_at DESC
@@ -397,7 +512,10 @@ def get_user_complaints(user_id):
             "risk_score": r[5],
             "created_at": r[6],
             "image_path": r[7],
-            "address": r[8]
+            "address": r[8],
+            "state": r[9],
+            "city": r[10],
+            "area": r[11]
         }
         for r in rows
     ]
@@ -521,3 +639,60 @@ def get_active_location():
         "longitude": coords[1],
         "source": "dominant_cluster"
     }
+
+def get_officer_workload(state, city, area):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT assigned_officer, COUNT(*) as total
+        FROM complaints
+        WHERE status != 'RESOLVED'
+        AND state = ?
+        AND city = ?
+        AND area = ?
+        GROUP BY assigned_officer
+    """, (state, city, area))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        officer = r[0] if r[0] else "Unassigned"
+        count = r[1]
+        result.append({
+            "officer": officer,
+            "count": count
+        })
+    return result
+
+def get_area_alerts(state, city, area):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT area, COUNT(*) as total
+        FROM complaints
+        WHERE status != 'RESOLVED'
+        AND state = ?
+        AND city = ?
+        AND area = ?
+        GROUP BY area
+    """, (state, city, area))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    alerts = []
+    for r in rows:
+        area_name = r[0]
+        count = r[1]
+
+        if area_name and count >= 3:
+            alerts.append({
+                "area": area_name,
+                "count": count,
+                "level": "HIGH"
+            })
+    return alerts

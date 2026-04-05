@@ -214,21 +214,97 @@
   <div id="complaintModal" class="modal">
     <div class="modal-box">
       <h3>Submit Complaint</h3>
-      <input id="manualLocation" type="text" placeholder="Enter location (optional)"
-        style="width:100%;padding:10px;margin-top:10px;">
+      
+      <div style="margin-top: 15px;">
+        <select id="stateSelect" style="width: 100%; padding: 10px; margin-bottom: 10px;" onchange="updateCities()">
+          <option value="">Select State *</option>
+          <option value="Karnataka">Karnataka</option>
+          <option value="West Bengal">West Bengal</option>
+        </select>
+
+        <select id="citySelect" style="width: 100%; padding: 10px; margin-bottom: 10px;" onchange="updateAreas()">
+          <option value="">Select City *</option>
+        </select>
+
+        <select id="areaSelect" style="width: 100%; padding: 10px; margin-bottom: 10px;">
+          <option value="">Select Area *</option>
+        </select>
+
+        <input type="hidden" id="latitude">
+        <input type="hidden" id="longitude">
+      </div>
+
+      <input id="manualLocation" type="text" placeholder="Landmark / Street (optional)"
+        style="width:100%;padding:10px;margin-bottom:10px;">
+      
+      <input id="mobileNumber" type="tel" placeholder="Mobile Number for Updates (10 digits) *" 
+        style="width:100%;padding:10px;margin-bottom:10px;" required>
+
       <textarea id="complaintText" rows="4" placeholder="Describe your issue..."></textarea>
+      
       <div style="margin-top:10px;">
         <label style="font-size:12px;color:#666;">Attach Image (JPG, PNG, JPEG - Max 5MB):</label>
         <input id="complaintImage" type="file" accept="image/*" style="width:100%;margin-top:5px;">
       </div>
+
       <div class="modal-actions">
-        <button onclick="submitComplaint()">Submit</button>
-        <button onclick="closeModal()">Cancel</button>
+        <button id="submitBtn" onclick="submitComplaint()" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">Submit Complaint</button>
+        <button onclick="closeModal()" style="padding: 10px 20px; border: none; cursor: pointer;">Cancel</button>
       </div>
     </div>
   </div>
 
   <script>
+    const locationData = {
+      "Karnataka": {
+        "cities": {
+          "Bengaluru": ["Rajanukunte", "Whitefield", "Indiranagar", "Electronic City", "Koramangala"],
+          "Mysuru": ["Hebbal", "Vijayanagar"]
+        }
+      },
+      "West Bengal": {
+        "cities": {
+          "Kolkata": ["Kolkata", "New Town", "Salt Lake", "Behala", "Dum Dum"],
+          "Howrah": ["Howrah Maidam", "Shibpur"]
+        }
+      }
+    };
+
+    function updateCities() {
+      const state = document.getElementById("stateSelect").value;
+      const citySelect = document.getElementById("citySelect");
+      const areaSelect = document.getElementById("areaSelect");
+      
+      citySelect.innerHTML = '<option value="">Select City *</option>';
+      areaSelect.innerHTML = '<option value="">Select Area *</option>';
+      
+      if (state && locationData[state]) {
+        Object.keys(locationData[state].cities).forEach(city => {
+          const opt = document.createElement("option");
+          opt.value = city;
+          opt.textContent = city;
+          citySelect.appendChild(opt);
+        });
+      }
+    }
+
+    function updateAreas() {
+      const state = document.getElementById("stateSelect").value;
+      const city = document.getElementById("citySelect").value;
+      const areaSelect = document.getElementById("areaSelect");
+      
+      areaSelect.innerHTML = '<option value="">Select Area *</option>';
+      
+      if (state && city && locationData[state].cities[city]) {
+        locationData[state].cities[city].forEach(area => {
+          const opt = document.createElement("option");
+          opt.value = area;
+          opt.textContent = area;
+          areaSelect.appendChild(opt);
+        });
+      }
+    }
+
     // ================= LOAD COMPLAINTS =================
     async function loadUserComplaints() {
       const res = await fetch("/user/complaints", {
@@ -275,49 +351,86 @@
     function openModal() { document.getElementById("complaintModal").style.display = "flex"; }
     function closeModal() { document.getElementById("complaintModal").style.display = "none"; }
 
-    // ================= SUBMIT =================
-    async function submitComplaint() {
+    // ================= SUBMIT (HARDENED GPS ENGINE) =================
+    window.submitComplaint = function() {
       const text = document.getElementById("complaintText").value;
-      const manual = document.getElementById("manualLocation").value;
+      const state = document.getElementById("stateSelect").value;
+      const city = document.getElementById("citySelect").value;
+      const area = document.getElementById("areaSelect").value;
+      const mobile = document.getElementById("mobileNumber").value;
       const imageFile = document.getElementById("complaintImage").files[0];
+      const submitBtn = document.getElementById("submitBtn");
 
-      if (!text) return alert("Enter complaint");
+      if (!text) return alert("Please enter complaint details");
 
-      if (imageFile && imageFile.size > 5 * 1024 * 1024) {
-        return alert("File size too large (max 5MB)");
+      // UI INDICATOR
+      submitBtn.disabled = true;
+      submitBtn.innerText = "📍 SECURING GPS...";
+
+      if (!navigator.geolocation) {
+        sendFinal(text, null, null);
+        return;
       }
 
-      const formData = new FormData();
-      formData.append("description", text);
-      formData.append("location_text", manual);
-      if (imageFile) formData.append("image", imageFile);
-
-      navigator.geolocation.getCurrentPosition(async pos => {
-        formData.append("latitude", pos.coords.latitude);
-        formData.append("longitude", pos.coords.longitude);
-        await sendComplaint(formData);
-      }, async () => {
-        await sendComplaint(formData);
-      });
-    }
-
-    async function sendComplaint(formData) {
-      const res = await fetch("/submit", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer " + token
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          console.log("[GPS] SECURED:", lat, lng);
+          sendFinal(text, lat, lng);
         },
-        body: formData
-      });
+        function(err) {
+          console.warn("[GPS] FAILED/DENIED:", err.message);
+          sendFinal(text, null, null);
+        },
+        { timeout: 8000 }
+      );
 
-      const result = await res.json();
+      function sendFinal(complaintText, lat, lng) {
+        // We use FormData for high-fidelity support (including images)
+        const fd = new FormData();
+        fd.append("complaint", complaintText);
+        fd.append("state", state);
+        fd.append("city", city);
+        fd.append("area", area);
+        fd.append("mobile", mobile);
 
-      if (result.success) {
-        alert("Complaint submitted!");
-        loadUserComplaints();
-        closeModal();
-      } else {
-        alert("Failed");
+        if (lat && lng) {
+          fd.append("latitude", lat);
+          fd.append("longitude", lng);
+          fd.append("location_source", "GPS");
+        } else {
+          fd.append("location_source", "USER_SELECTED");
+        }
+
+        if (imageFile) fd.append("image", imageFile);
+
+        console.log("[SYS] DISPATCHING REPORT...");
+
+        fetch("/submit-complaint", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + token
+          },
+          body: fd
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Complaint Logged Successfully!");
+            location.reload();
+          } else {
+            alert("Submission Refused: " + (data.error || "Unknown"));
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Submit Complaint";
+          }
+        })
+        .catch(err => {
+          console.error("Critical Network Error:", err);
+          alert("Network unstable. Please retry.");
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Submit Complaint";
+        });
       }
     }
 

@@ -91,6 +91,27 @@ font-weight:600;
 color:#444;
 }
 
+.password-container {
+  position: relative;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: #888;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.toggle-password:hover {
+  opacity: 1;
+}
+
 input, select{
 width:100%;
 padding:10px;
@@ -172,7 +193,8 @@ text-decoration:underline;
 <li><a href="/">Home</a></li>
 <li><a href="/user-dashboard">Dashboard</a></li>
 <li><a href="/user-login-ui">User Login</a></li>
-<li><a href="/admin-login-ui">Officer Login</a></li>
+<li><a href="/officer-login">Officer Login</a></li>
+<li><a href="/admin-login">Admin Login</a></li>
 <li><a href="/register-ui">Register</a></li>
 </ul>
 </nav>
@@ -199,7 +221,12 @@ text-decoration:underline;
 
 <div class="form-group">
 <label>Create Password</label>
-<input id="password" type="password" required placeholder="Create password">
+<div class="password-container">
+  <input id="password" type="password" required placeholder="Create password" style="padding-right: 40px;">
+  <span class="toggle-password" onclick="togglePassword('password', this)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+  </span>
+</div>
 </div>
 
 <button class="register-btn">Create Account</button>
@@ -215,10 +242,18 @@ text-decoration:underline;
 </section>
 
 
-<footer>
-© 2026 AI Complaint Management System | Digital Services
 </footer>
 <script>
+function togglePassword(inputId, icon) {
+  const input = document.getElementById(inputId);
+  if (input.type === "password") {
+    input.type = "text";
+    icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94a10.07 10.07 0 0 1-12.88 0M1 12s4-8 11-8a11.78 11.78 0 0 1 7.4 2.6M21 12s-4 8-11 8a11.78 11.78 0 0 1-7.4-2.6L1 1m22 22L1 1"></path></svg>';
+  } else {
+    input.type = "password";
+    icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+  }
+}
 async function registerUser(e) {
   e.preventDefault();
 

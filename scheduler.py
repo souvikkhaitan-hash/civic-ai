@@ -1,27 +1,42 @@
 import time
 import threading
 from internet.weather_agent import run_weather_check
-from database import save_complaint, enforce_sla
+from database import save_complaint, enforce_sla, get_active_location
 from ai_agent import analyze_complaint
 
-DEFAULT_LAT = 12.9716
-DEFAULT_LON = 77.5946
+# =========================
+# 📍 LOCATION OVERRIDE
+# =========================
+STATE_MAP = {
+    "Bengaluru": "Karnataka",
+    "Kolkata": "West Bengal",
+    "Delhi": "Delhi",
+    "Mumbai": "Maharashtra"
+}
 
 def ai_loop():
-    print("[AI] Weather Scheduler started...")
+    print("[AI] Weather Inspector started...")
 
     while True:
         try:
-            print("[WEATHER] Checking weather...")
+            print("[WEATHER] Checking weather intelligence...")
             weather = run_weather_check()
 
             if weather and "ai_generated_complaint" in weather:
                 ai = weather["ai_generated_complaint"]
+                
+                # 🛑 FORCE SYSTEM ACTIVE LOCATION 🛑
+                loc = get_active_location()
+                city = loc.get("city", "Bengaluru")
+                lat = loc.get("latitude")
+                lon = loc.get("longitude")
+                
+                state = STATE_MAP.get(city, "Karnataka")
+                area = city # Default to city for panchayat dashboard
+                
+                print(f"[AI LOCATION OVERRIDE] {state} {city} {area}")
 
-                lat = ai.get("latitude") or DEFAULT_LAT
-                lon = ai.get("longitude") or DEFAULT_LON
-                description = ai.get("description", "Weather-based civic risk")
-
+                description = ai.get("description", "Weather-based civic risk detected")
                 ai_res = analyze_complaint(description, lat, lon)
 
                 save_complaint(
@@ -30,33 +45,35 @@ def ai_loop():
                     ai_res.get("priority"),
                     ai_res.get("risk_score"),
                     ai_res.get("explanation"),
-                    0,
-                    lat,
-                    lon,
-                    source="weather"
+                    user_id=None,
+                    lat=lat,
+                    lon=lon,
+                    manual_location=city,
+                    image_path=None,
+                    address=None,
+                    state=state,
+                    city=city,
+                    area=area,
+                    source="ai"
                 )
-                print("[INFO] Weather complaint saved")
+                print("[INFO] Weather AI report synced with Panchayat")
 
         except Exception as e:
             print(f"[ERR] Weather loop error: {e}")
 
-        time.sleep(60)  # every 1 minute
+        time.sleep(60)
 
 def sla_loop():
-    print("[AI] SLA Monitoring started (Every 1 hour)...")
+    print("[AI] SLA Monitoring active...")
     while True:
         try:
-            print("[SLA] Enforcing SLA rules...")
             enforce_sla()
         except Exception as e:
             print(f"[ERR] SLA loop error: {e}")
-        time.sleep(3600)  # Check every 1 hour
+        time.sleep(3600)
 
 def start_scheduler():
-    t1 = threading.Thread(target=ai_loop)
-    t1.daemon = True
+    t1 = threading.Thread(target=ai_loop, daemon=True)
     t1.start()
-
-    t2 = threading.Thread(target=sla_loop)
-    t2.daemon = True
+    t2 = threading.Thread(target=sla_loop, daemon=True)
     t2.start()

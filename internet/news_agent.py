@@ -2,40 +2,30 @@ import requests
 import os
 from dotenv import load_dotenv
 from ai_agent import analyze_complaint
-from database import save_complaint
+from database import save_complaint, get_active_location
 
 # 🔥 ENV
 load_dotenv()
 API_KEY = os.getenv("NEWS_API_KEY")
 
-CITY = "Bangalore"
-DEFAULT_LAT = 12.9716
-DEFAULT_LON = 77.5946
+# =========================
+# 📍 LOCATION OVERRIDE
+# =========================
+STATE_MAP = {
+    "Bengaluru": "Karnataka",
+    "Kolkata": "West Bengal",
+    "Delhi": "Delhi",
+    "Mumbai": "Maharashtra"
+}
 
 # ==============================
 # 🧠 REAL CIVIC FILTER (STRICT)
 # ==============================
 def is_real_civic_issue(text):
     text = text.lower()
-
-    # Infrastructure signals
-    infra = [
-        "road", "bridge", "drain", "sewage", "garbage",
-        "flood", "waterlogging", "power outage",
-        "streetlight", "pothole", "overflow"
-    ]
-
-    # Municipal responsibility context
-    civic_context = [
-        "collapsed", "blocked", "overflow",
-        "failure", "complaints", "residents suffer",
-        "bbmp", "municipal", "civic body"
-    ]
-
-    has_infra = any(k in text for k in infra)
-    has_context = any(k in text for k in civic_context)
-
-    return has_infra and has_context
+    infra = ["road", "bridge", "drain", "sewage", "garbage", "flood", "waterlogging", "power outage", "pothole", "overflow"]
+    civic_context = ["collapsed", "blocked", "overflow", "failure", "complaints", "residents suffer", "bbmp", "municipal", "civic body"]
+    return any(k in text for k in infra) and any(k in text for k in civic_context)
 
 
 # ==============================
@@ -47,11 +37,20 @@ def fetch_and_ingest_news():
         return
 
     try:
+        # Step 1: Force system location even for news search
+        loc = get_active_location()
+        city = loc.get("city", "Bengaluru")
+        lat = loc.get("latitude")
+        lon = loc.get("longitude")
+        
+        state = STATE_MAP.get(city, "Karnataka")
+        area = city
+        
         KEYWORDS = "flood OR garbage OR road OR water OR electricity OR traffic OR pothole"
 
         url = (
             f"https://newsapi.org/v2/everything"
-            f"?q={CITY} AND ({KEYWORDS})"
+            f"?q={city} AND ({KEYWORDS})"
             f"&sortBy=publishedAt"
             f"&language=en"
             f"&apiKey={API_KEY}"
@@ -67,7 +66,7 @@ def fetch_and_ingest_news():
         articles = data.get("articles", [])
         accepted = 0
 
-        for article in articles[:15]:
+        for article in articles[:10]:
             title = article.get("title", "")
             desc = article.get("description", "")
             full_text = f"{title}. {desc}".strip()
@@ -76,18 +75,15 @@ def fetch_and_ingest_news():
                 continue
 
             # 🚫 Strict civic filter
-            if not is_real_civic_issue(full_text):
-                print("[NEWS FILTERED]", title[:60])
-                continue
+            if not is_real_civic_issue(full_text): continue
+
+            print(f"[AI LOCATION OVERRIDE] {state} {city} {area}")
 
             # 🤖 AI analysis
-            ai = analyze_complaint(full_text, lat=DEFAULT_LAT, lon=DEFAULT_LON)
+            ai = analyze_complaint(full_text, lat=lat, lon=lon)
             risk = ai.get("risk_score", 0)
 
-            # 🚫 Minimum threshold
-            if risk < 25:
-                print("[NEWS LOW SCORE]", title[:60])
-                continue
+            if risk < 25: continue
 
             # 💾 Save to DB (real ingestion)
             save_complaint(
@@ -95,17 +91,23 @@ def fetch_and_ingest_news():
                 ai.get("department"),
                 ai.get("priority"),
                 risk,
-                ai.get("explanation"),
-                0,  # system user
-                DEFAULT_LAT,
-                DEFAULT_LON,
-                source="news"
+                str(ai.get("explanation")),
+                user_id=None,
+                lat=lat,
+                lon=lon,
+                manual_location=city,
+                image_path=None,
+                address=None,
+                state=state,
+                city=city,
+                area=area,
+                source="ai"
             )
 
-            print(f"[NEWS ACCEPTED] {title[:70]} | Score: {risk}")
+            print(f"[NEWS ACCEPTED] {title[:60]} | Score: {risk}")
             accepted += 1
 
-        print(f"[NEWS] Accepted {accepted} civic reports")
+        print(f"[NEWS] Synced {accepted} reports with {city} jurisdiction")
 
     except Exception as e:
         print("[NEWS ERROR]", str(e))
@@ -115,7 +117,7 @@ def fetch_and_ingest_news():
 # 🔁 SCHEDULER LOOP
 # ==============================
 def news_loop():
-    print("[AI] News Civic Ingestion Agent started (Every 10 mins)...")
+    print("[AI] News Civic Inspector started...")
     import time
     while True:
         fetch_and_ingest_news()

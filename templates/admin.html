@@ -1,100 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Civic AI Command Center</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civic AI Command Center - Dashboard</title>
 
   <!-- CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
-
 <body>
 
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <span class="nav-logo">🏙️</span>
+      Civic AI Command Center
+    </div>
+
+    <ul class="nav-menu">
+      <li><a href="#" class="active">Dashboard</a></li>
+    </ul>
+
+    <div class="nav-right">
+      <div class="search-container">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search complaints..." oninput="filterTable(this.value)">
+      </div>
+
+      <div class="nav-icon dropdown-trigger" onclick="toggleDropdown('notif-dropdown')">
+        🔔<span class="nav-badge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; width: 6px; height: 6px; border-radius: 50%;"></span>
+        <div id="notif-dropdown" class="dropdown-menu">
+          <div class="dropdown-header">Notifications</div>
+          <div class="dropdown-item">No new alerts</div>
+        </div>
+      </div>
+
+      <div class="profile-avatar dropdown-trigger" onclick="toggleDropdown('profile-dropdown')">
+        A
+        <div id="profile-dropdown" class="dropdown-menu">
+          <div class="dropdown-header">Admin Settings</div>
+          <div class="dropdown-item" onclick="doLogout()">Logout</div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
   <div class="container">
-    <header class="header">
-      <div class="header-title">🏙️ Civic AI Command Center</div>
-      <button onclick="doLogout()"><span style="color: #f59e0b; font-weight: bold;">|</span> Logout</button>
-    </header>
-
-    <main class="main">
-      <!-- ================= SMART PANEL ================= -->
-      <div class="smart-panel">
-
-        <!-- WEATHER CARD -->
-        <div class="weather-card">
-          <h3>🌤 Weather AI</h3>
-          <p>Temp: <span id="weather-temp">--</span></p>
-          <p>Condition: <span id="weather-condition">--</span></p>
-          <p>Risk: <b id="weather-risk">--</b></p>
-          <div id="location-badge" class="badge-region" style="display: none;">📍 Region Synced</div>
-        </div>
-
-        <!-- MAP CONTAINER -->
-        <div class="map-container">
-          <div id="map"></div>
-        </div>
-
-      </div>
-
-      <!-- ================= AI CITY SUMMARY ================= -->
-      <div class="summary-card" id="city-summary-card">
-        <h3>📊 AI City Summary</h3>
-        <div id="summary-content" class="summary-grid">
-          <div class="summary-item">Calculating city-wide insights...</div>
+    
+    <!-- SMART PANEL Row -->
+    <div class="smart-panel">
+      <!-- WEATHER -->
+      <div class="weather-card">
+        <div class="weather-header">ENVIRONMENTAL CORE</div>
+        <div style="font-size: 32px; margin-bottom: 8px;">⛅</div>
+        <div class="weather-temp" id="weather-temp">--°C</div>
+        <div class="weather-condition" id="weather-condition">Checking environment...</div>
+        <div class="weather-risk-badge" id="weather-risk-badge">RISK: <span id="weather-risk">--</span></div>
+        <div class="region-label">
+          📍 {{ region.area or 'Unknown Area' }}, {{ region.city or 'Bengaluru' }}
         </div>
       </div>
 
-      <!-- ================= STATS ================= -->
-      <div class="stats-row">
-        <span>Total: <b id="total-count">0</b></span>
-        <span>Open: <b id="open-count">0</b></span>
-        <span>In Progress: <b id="progress-count">0</b></span>
-        <span>Resolved: <b id="resolved-count">0</b></span>
-      </div>
-
-      <!-- SEARCH & TOOLBAR -->
-      <div class="toolbar">
-        <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input placeholder="Search..." oninput="filterTable(this.value)">
+      <!-- MAP BOX -->
+      <div class="map-card">
+        <div class="map-overlay">
+          <div class="overlay-title">Data Overlay Control</div>
+          <div class="toggle-group">
+            <button id="traffic-btn" class="toggle-btn" onclick="toggleLayer('traffic')">Traffic</button>
+            <button id="power-btn" class="toggle-btn" onclick="toggleLayer('power')">Power</button>
+            <button id="density-btn" class="toggle-btn" onclick="toggleLayer('density')">Density</button>
+          </div>
         </div>
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <!-- SUMMARY CARDS -->
+    <div class="summary-grid">
+      <!-- Card 1: Critical Alert -->
+      <div class="summary-card alert">
+        <div class="summary-card-header">
+          <span class="summary-label">Critical Alert</span>
+          <span class="summary-icon">🔥</span>
+        </div>
+        <div class="summary-value" id="open-count">0</div>
+        <div class="summary-desc">High Priority issues requiring immediate attention.</div>
       </div>
 
-      <!-- ================= TABLE ================= -->
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Complaint</th>
-              <th>Department</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Source</th>
-              <th>Proof</th>
-              <th>Risk</th>
-              <th>Confidence</th>
-              <th>Date</th>
-              <th>SLA Risk</th>
-              <th>Location</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="table-body"></tbody>
-        </table>
+      <!-- Card 2: Department Focus -->
+      <div class="summary-card focus">
+        <div class="summary-card-header">
+          <span class="summary-label">Department Focus</span>
+          <span class="summary-icon">🏢</span>
+        </div>
+        <div class="summary-value" style="font-size: 18px; line-height: 1.2;" id="dept-focus-val">Detecting...</div>
+        <div class="summary-desc">Top departments with active workloads.</div>
       </div>
-    </main>
+
+      <!-- Card 3: Field Presence -->
+      <div class="summary-card presence">
+        <div class="summary-card-header">
+          <span class="summary-label">Field Presence</span>
+          <span class="summary-icon">👷</span>
+        </div>
+        <div class="summary-value" id="officer-count-val">--</div>
+        <div class="summary-desc">Active personnel currently in the dashboard network.</div>
+      </div>
+
+      <!-- Card 4: Real-Time Density -->
+      <div class="summary-card density">
+        <div class="summary-card-header">
+          <span class="summary-label">Real-Time Density</span>
+          <span class="summary-icon">📡</span>
+        </div>
+        <div class="summary-value" id="density-val">Points: --</div>
+        <div class="summary-desc">Area density sensors stable within operational thresholds.</div>
+      </div>
+    </div>
+
+    <!-- COMPLAINT SECTION TITLE -->
+    <div class="section-header">
+      <div class="section-title">
+        <h2>Active Complaint Command</h2>
+        <p>Managed orchestration of multi-department civic resolutions.</p>
+      </div>
+    </div>
+
+    <!-- MAIN TABLE -->
+    <div class="table-card" id="scroll-anchor">
+      <table class="responsive-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Complaint Details</th>
+            <th>Dept</th>
+            <th>Priority</th>
+            <th>Source</th>
+            <th>Risk Analysis</th>
+            <th>Created At</th>
+            <th>SLA Status</th>
+            <th>Officer Assignment</th>
+            <th>Location</th>
+            <th>Photo Proof</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- JS Render -->
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
-  <!-- ================= LIBRARIES ================= -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- INJECTIVE CONFIG -->
+  <script>
+    const __region = JSON.parse('{{ region | tojson | safe }}');
+    window.ADMIN_CONFIG = {
+      region: __region,
+      center: JSON.parse('{{ center | tojson | safe if center else "null" }}')
+    };
+  </script>
 
-  <!-- ================= ADMIN LOGIC ================= -->
+  <!-- LIBRARIES -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/static/admin.js"></script>
 
-</body>
+  <!-- Live Updating Data for Summary Cards -->
+  <script>
+    async function updateDashboardFeed() {
+      try {
+        const res = await fetch("/admin/officer-workload");
+        const officers = await res.json();
+        document.getElementById("officer-count-val").innerText = officers.length;
 
+        const alertRes = await fetch("/admin/area-alerts");
+        const alerts = await alertRes.json();
+        if(alerts.length > 0) {
+          document.getElementById("density-val").innerText = `Total: ${alerts[0].count}`;
+        }
+      } catch (e) { console.error(e); }
+    }
+    updateDashboardFeed();
+    setInterval(updateDashboardFeed, 10000);
+  </script>
+
+</body>
 </html>

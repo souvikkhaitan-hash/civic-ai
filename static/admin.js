@@ -1,329 +1,298 @@
+let trafficLayer, markerLayer, map;
+let activeLayers = { traffic: false, power: false, density: false };
+
 /**
- * 🏙️ CIVIC AI COMMAND CENTER - ADMIN LOGIC
- * Restored stable single-file version. No notifications. Correct status handling.
+ * 🚀 INITIALIZATION & PERIODIC SYNC
  */
+document.addEventListener("DOMContentLoaded", () => {
+  console.log("[SYSTEM] Command Center Initializing...");
 
-// ===============================
-// 📍 GLOBAL STATE
-// ===============================
-let map;
-let markerLayer;
-let activeCity = "Bangalore";
+  // HARDENED POSITIONING ENGINE
+  const config = window.ADMIN_CONFIG || {};
+  const centerCoords = config.center || [12.9716, 77.5946];
 
-// ===============================
-// 📦 DATA FETCHING
-// ===============================
+  console.log(`[MAP] Centering on jurisdiction: ${centerCoords}`);
+
+  map = L.map('map', { zoomControl: false }).setView(centerCoords, 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
+  trafficLayer = L.layerGroup().addTo(map);
+  activeLayers.traffic = true;
+  loadTrafficData();
+
+  map.on('moveend', () => { if (activeLayers.traffic) loadTrafficData(); });
+
+  loadComplaints();
+  loadWeather(config.region.city);
+  syncNotifications();
+
+  // 2. Global Tooltip Engine
+  const tooltip = document.createElement("div");
+  tooltip.className = "custom-tooltip";
+  tooltip.style.display = "none";
+  document.body.appendChild(tooltip);
+
+  document.addEventListener("mouseover", e => {
+    const target = e.target.closest('[data-tooltip]');
+    if (target) {
+      tooltip.innerText = target.dataset.tooltip;
+      tooltip.style.display = "block";
+      const rect = target.getBoundingClientRect();
+      tooltip.style.left = (rect.left + (rect.width / 2)) + "px";
+      tooltip.style.top = (rect.top - 10) + "px";
+      tooltip.style.transform = "translate(-50%, -100%)";
+    }
+  });
+
+  document.addEventListener("mouseout", e => {
+    if (e.target.closest('[data-tooltip]')) tooltip.style.display = "none";
+  });
+
+  // 3. Periodic Background Sync
+  setInterval(loadComplaints, 20000);
+  setInterval(syncNotifications, 5000);
+});
+
+/**
+ * 📋 COMPLAINT DATA ENGINE
+ */
 async function loadComplaints() {
   try {
     const res = await fetch("/admin/complaints", { credentials: "include" });
     const data = await res.json();
-
-    if (data.error || !Array.isArray(data)) {
-      console.warn("Dashboard error or unauthorized:", data.error || "Invalid response");
-      if (data.error && data.error.includes("expired")) {
-        window.location.href = "/admin-login-ui";
-      }
-      renderComplaints([]);
-      updateStats([]);
-      return;
-    }
-
+    if (data.error || !Array.isArray(data)) return;
     renderComplaints(data);
     updateStats(data);
     updateMarkers(data);
+
+    // AUTO ZOOM ENGINE
+    if (data.length > 0 && markerLayer) {
+      const validCoords = data.filter(c => c.latitude != null && c.longitude != null);
+      if (validCoords.length > 0) {
+        const bounds = L.latLngBounds(validCoords.map(c => [c.latitude, c.longitude]));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      }
+    }
   } catch (err) { console.error("Fetch error:", err); }
 }
 
-// ===============================
-// 📊 STATS & SUMMARY
-// ===============================
 function updateStats(data) {
-  document.getElementById("total-count").innerText = data.length;
-  document.getElementById("open-count").innerText =
-    data.filter(c => c.status && c.status.toLowerCase() === "open").length;
-  document.getElementById("progress-count").innerText =
-    data.filter(c => (c.status && c.status.toLowerCase() === "in progress") || (c.status && c.status.toLowerCase() === "in_progress")).length;
-  document.getElementById("resolved-count").innerText =
-    data.filter(c => c.status && c.status.toLowerCase() === "resolved").length;
+  // CRITICAL ALERT: Count high-priority active cases
+  const highPriorityCount = data.filter(c =>
+    (c.priority && c.priority.toUpperCase() === "HIGH") &&
+    (c.status && c.status.toLowerCase() !== "resolved")
+  ).length;
 
-  updateCitySummary(data);
-}
+  const criticalVal = document.getElementById("open-count");
+  if (criticalVal) criticalVal.innerText = highPriorityCount;
 
-function updateCitySummary(data) {
-  const summaryContent = document.getElementById("summary-content");
-  if (!summaryContent) return;
-
-  if (!data || data.length === 0) {
-    summaryContent.innerHTML = '<div class="summary-item">No active civic trends detected.</div>';
-    return;
-  }
-
-  const highPriorityCount = data.filter(c => c.priority === "HIGH").length;
   const deptStats = {};
   data.forEach(c => { deptStats[c.department] = (deptStats[c.department] || 0) + 1; });
-
-  const trends = [];
-  if (deptStats["Sanitation"] > 2) trends.push("⚠️ Sanitation rising: Multiple hygiene risks detected.");
-  if (deptStats["Drainage"] > 2) trends.push("🌊 Flood risk emerging: Drainage issues concentrated.");
-  if (deptStats["Roads"] > 2) trends.push("🛣️ Infrastructure hazard: Increasing road/pothole reports.");
-  if (deptStats["Electric"] > 2) trends.push("⚡ Public safety risk: Power/Lighting failures detected.");
-
-  let summaryHtml = `
-    <div class="summary-item" style="border-left-color: ${highPriorityCount > 0 ? '#dc2626' : '#3b82f6'}">
-      <span style="font-size: 16px;">🔥</span> 
-      <span style="color: ${highPriorityCount > 0 ? '#dc2626' : '#1e293b'}"><b>${highPriorityCount}</b> High Priority issues requiring immediate attention.</span>
-    </div>
-    <div class="summary-item">
-      <span style="font-size: 16px;">🏢</span>
-      <span>Top Departments: ${Object.entries(deptStats).sort((a, b) => b[1] - a[1]).slice(0, 2).map(d => `${d[0]} (${d[1]})`).join(", ")}</span>
-    </div>
-  `;
-
-  if (trends.length > 0) {
-    summaryHtml += `<div class="summary-item"><span style="font-size: 16px;">⚠️</span><span>${trends[0]}</span></div>`;
-  } else {
-    summaryHtml += `
-      <div class="summary-item" style="border-left-color: #10b981">
-        <span style="font-size: 16px;">✅</span>
-        <span>Operational risk levels stable.</span>
-      </div>
-    `;
+  const sortedDepts = Object.entries(deptStats).sort((a, b) => b[1] - a[1]);
+  const deptVal = document.getElementById("dept-focus-val");
+  if (deptVal && sortedDepts.length > 0) {
+    deptVal.innerHTML = `${sortedDepts[0][0]}<div style="font-size: 11px; color: #64748b;">${sortedDepts[0][1]} active cases</div>`;
   }
-
-  summaryContent.innerHTML = summaryHtml;
 }
 
-// ===============================
-// 📋 TABLE RENDERING
-// ===============================
 function renderComplaints(data) {
   const tbody = document.getElementById("table-body");
   if (!tbody) return;
   tbody.innerHTML = "";
-
   if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" class="empty-row">No complaints found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="padding: 40px; text-align: center; color: #94a3b8;">No active complaints in command cycle.</td></tr>';
     return;
   }
 
   data.forEach(c => {
     try {
-      const riskClass = c.risk_score >= 70 ? "high-risk" : (c.risk_score >= 40 ? "medium-risk" : "low-risk");
       const row = document.createElement("tr");
+      row.className = "complaint-row";
+      const exp = parseExplanation(c.explanation);
 
       row.innerHTML = `
-        <td>#${c.id}</td>
+        <td class="id-badge">#C-${c.id}</td>
         <td>
-          ${escapeHtml(c.complaint)}
-          ${c.count > 1 ? `<span class="badge badge-dup">×${c.count}</span>` : ""}
+          <div class="complaint-text">${escapeHtml(c.complaint)}</div>
+          <div class="complaint-meta">${escapeHtml(c.translated_text || "--")}</div>
         </td>
-        <td>${escapeHtml(c.department)}</td>
-        <td><span class="priority-${String(c.priority).toLowerCase()}">${c.priority}</span></td>
-        <td>${renderStatusBadge(c.status)}</td>
-        <td>${renderSourceBadge(c.source)}</td>
-        <td>${c.image_path ? `<a href="/static/${c.image_path}" target="_blank">🖼️ View</a>` : "No proof"}</td>
+        <td><span class="badge-pill" style="background:#f1f5f9; color:#475569;">${escapeHtml(c.department)}</span></td>
+        <td><span class="badge-pill priority-${String(c.priority).toLowerCase()}">${c.priority}</span></td>
+        <td>${renderSourceBadgeFinal(c.location_source)}</td>
         <td>
-          <span class="tooltip ${riskClass}" data-tip="${escapeHtml(c.explanation || 'General risk').replace(/"/g, '&quot;')}">
-            ${c.risk_score}
-          </span>
+          <div data-tooltip="AI Risk Analysis:\n${escapeHtml(exp)}">
+            ${renderRiskProgress(c.risk_score)}
+          </div>
         </td>
-        <td>${renderConfidenceBar(c.risk_score)}</td>
-        <td>${c.created_at}</td>
+        <td style="font-size: 11px; color: #64748b; white-space: nowrap;">${formatLocalDate(c.created_at)}</td>
         <td>${renderSLABadge(c.status, c.risk_score)}</td>
-        <td>${formatLocation(c)}</td>
-        <td>${renderActions(c.status, c.id)}</td>
+        <td>
+          <div style="font-weight:700; color:#3b82f6; margin-bottom:6px; font-size:12px;">👤 ${escapeHtml(c.assigned_officer || c.department || 'Panchayat Officer')}</div>
+          <select onchange="assignOfficer(this, ${c.id})" style="padding: 6px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px; width: 100%; outline: none; background: #fafafa;">
+            <option value="">Align Officer...</option>
+            <option value="Panchayat Officer">Panchayat Officer</option>
+            <option value="Sanitation Worker">Sanitation Worker</option>
+            <option value="Road Inspector">Road Inspector</option>
+            <option value="Water Officer">Water Officer</option>
+            <option value="Electricity Board">Electricity Board</option>
+          </select>
+        </td>
+        <td style="font-size: 11px; color: #64748b; max-width: 250px; line-height: 1.4;">
+          ${renderLocationLabel(c)}
+          <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; margin-top: 4px;">
+            ${renderSourceBadgeFinal(c.location_source)}
+          </div>
+        </td>
+        <td>
+          ${c.proof_url
+          ? `<img src="${c.proof_url}" 
+                    style="width:40px;height:40px;border-radius:6px;cursor:pointer;object-fit:cover;border:1px solid #e2e8f0;"
+                    onclick="window.open('${c.proof_url}', '_blank')">`
+          : `<span style="color:#94a3b8; font-size:11px;">No proof</span>`
+        }
+        </td>
+        <td class="action-cell">${renderActionsUI(c.status, c.id)}</td>
       `;
       tbody.appendChild(row);
     } catch (err) { console.error(`[RENDER ERROR] Failed #${c.id}:`, err); }
   });
 }
 
-function renderActions(status, id) {
-  const s = status ? status.toLowerCase() : "";
-  if (s === "open" || s === "") {
-    return `
-      <button class="start-btn" data-id="${id}">Start</button>
-      <button class="delete-btn" data-id="${id}">Delete</button>
-    `;
-  }
-  if (s === "in_progress" || s === "in progress") {
-    return `
-      <button class="resolve-btn" data-id="${id}">Resolve</button>
-      <button class="undo-btn" data-id="${id}">Undo</button>
-      <button class="delete-btn" data-id="${id}">Delete</button>
-    `;
-  }
-  if (s === "resolved") {
-    return `
-      <button class="undo-btn" data-id="${id}">Undo</button>
-      <button class="delete-btn" data-id="${id}">Delete</button>
-    `;
-  }
-  return "-";
+function renderRiskProgress(score) {
+  const s = Math.min(100, (score || 0));
+  const color = s >= 70 ? "#ef4444" : (s >= 40 ? "#f59e0b" : "#10b981");
+  return `<div class="risk-progress-container"><div class="risk-progress-bg"><div class="risk-progress-fill" style="width: ${s}%; background: ${color}"></div></div><span class="risk-label" style="color: ${color}">SCORE: ${s}</span></div>`;
 }
 
-// ===============================
-// 🔁 ACTION HANDLERS
-// ===============================
-async function handleAction(id, type, status = null) {
-  let url = `/complaints/${id}/status`;
-  let method = "PUT";
-  let body = status ? JSON.stringify({ status }) : null;
-
-  if (type === "undo") url = `/complaints/${id}/undo`;
-  if (type === "delete") {
-    if (!confirm("Delete?")) return;
-    url = `/complaints/${id}`;
-    method = "DELETE";
+function renderActionsUI(status, id) {
+  const s = status ? status.toUpperCase() : "OPEN";
+  if (s === "OPEN") {
+    return `<button class="btn-ctrl send" title="Send" onclick="window.sendToOfficer(${id})">➤</button><button class="btn-ctrl delete" title="Purge" onclick="window.deleteComplaint(${id})">🗑</button>`;
+  } else if (s === "ASSIGNED") {
+    return `<span class="waiting-badge">Waiting...</span><button class="btn-ctrl delete" title="Purge" onclick="window.deleteComplaint(${id})">🗑</button>`;
+  } else if (s === "IN_PROGRESS") {
+    return `<span class="badge-pill" style="background:#dbeafe; color:#1e40af;">Running</span>`;
   }
-
-  await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body
-  });
-  loadComplaints();
-}
-
-// ===============================
-// 🏷 BADGE HELPERS
-// ===============================
-function renderStatusBadge(status) {
-  const s = status ? status.toLowerCase() : "open";
-  let cls = "open";
-  let display = status || "Open";
-  if (s === "in_progress" || s === "in progress") {
-    cls = "progress";
-    display = "In Progress";
-  }
-  if (s === "resolved") cls = "resolved";
-  return `<span class="badge badge-${cls}">${display}</span>`;
+  return `<span class="badge-pill" style="background:#dcfce7; color:#166534;">Closed</span>`;
 }
 
 function renderSourceBadge(source) {
-  const map = { 'user': '👤 User', 'weather': '🌦 Weather', 'news': '📰 News', 'reddit': '📎 Reddit', 'ai': '🤖 AI' };
-  return `<span class="badge badge-${source || 'user'}">${map[source] || '👤 User'}</span>`;
+  const map = { 'user': '👤 User', 'weather': '🌡 AI (Env)', 'news': '🗞 News', 'reddit': '💬 Social', 'ai': '🤖 System' };
+  return `<span style="font-size: 13px; font-weight: 500; color: #64748b;">${map[source] || '👤 User'}</span>`;
 }
 
 function renderSLABadge(status, riskScore) {
   const s = status ? status.toLowerCase() : "";
-  if (s === "resolved") return '<span class="badge badge-safe tooltip" data-tip="Within SLA">Closed</span>';
-
-  if (riskScore >= 90) {
-    return '<span class="badge badge-breached tooltip" data-tip="SLA breached">Breached</span>';
-  } else if (riskScore >= 70) {
-    const hours = Math.max(1, Math.floor((95 - riskScore) / 2));
-    return `<span class="badge badge-breached tooltip" data-tip="${hours} hours remaining">At Risk</span>`;
-  }
-  return '<span class="badge badge-safe tooltip" data-tip="Within SLA">Safe</span>';
+  if (s === "resolved") return '<span class="status-pill" style="color: #10b981;">SAFE</span>';
+  if (riskScore >= 90) return '<span class="status-pill" style="color: #ef4444; background: #fef2f2;">BREACHED</span>';
+  if (riskScore >= 70) return '<span class="status-pill" style="color: #f59e0b; background: #fffbeb;">AT RISK</span>';
+  return '<span class="status-pill" style="color: #3b82f6; background: #eff6ff;">SAFE</span>';
 }
 
-function renderConfidenceBar(score) {
-  const confidence = Math.min(100, Math.round(score * 1.3));
-  const color = confidence > 70 ? "bg-green" : (confidence >= 40 ? "bg-orange" : "bg-red");
-  return `
-    <div class="confidence-container tooltip" data-tip="AI Confidence: ${confidence}%">
-      <div class="confidence-bar-outer">
-        <div class="confidence-bar-inner ${color}" style="width: ${confidence}%"></div>
-      </div>
-      <span class="confidence-text">${confidence}%</span>
-    </div>
-  `;
+function formatLocalDate(utcStr) {
+  if (!utcStr) return "--";
+  const d = new Date(utcStr + " UTC");
+  return d.toLocaleString('en-IN', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function formatLocation(c) {
-  if (c.address && c.address !== "null") return "🏠 " + escapeHtml(c.address);
-  if (c.manual_location && c.manual_location !== "null") return "📍 " + escapeHtml(c.manual_location);
-  if (c.latitude && c.longitude) {
-    return "📍 Bangalore (AI estimated)";
-  }
-  return "Unknown";
-}
-
-// ===============================
-// 🌤 WEATHER & MAP
-// ===============================
 async function loadWeather(city) {
   try {
-    const res = await fetch(city ? `/api/weather?city=${encodeURIComponent(city)}` : "/api/weather");
+    const res = await fetch(`/api/weather?city=${encodeURIComponent(city || 'Bengaluru')}`);
     const data = await res.json();
-    document.getElementById("weather-temp").innerText = data.temperature + "°C";
-    document.getElementById("weather-condition").innerText = data.condition;
-    document.getElementById("weather-risk").innerText = data.risk_level;
-    const card = document.querySelector(".weather-card");
-    if (card) {
-      if (data.risk_level === "HIGH") card.style.background = "linear-gradient(135deg,#4b0000,#a10000)";
-      else if (data.risk_level === "MEDIUM") card.style.background = "linear-gradient(135deg,#5a3d00,#b8860b)";
-      else card.style.background = "linear-gradient(135deg,#001f3f,#0074d9)";
-    }
-  } catch (e) { console.error("Weather error", e); }
-}
-
-async function syncLocation() {
-  try {
-    const res = await fetch("/admin/active-location");
-    const data = await res.json();
-    if (data.city) {
-      activeCity = data.city;
-      loadWeather(activeCity);
-    } else { loadWeather(); }
-  } catch (e) { loadWeather(); }
+    document.getElementById("weather-temp") && (document.getElementById("weather-temp").innerText = data.temperature + "°C");
+    document.getElementById("weather-condition") && (document.getElementById("weather-condition").innerText = data.condition);
+    document.getElementById("weather-risk") && (document.getElementById("weather-risk").innerText = data.risk_level);
+  } catch (e) { }
 }
 
 function updateMarkers(complaints) {
   if (!markerLayer || !map) return;
   markerLayer.clearLayers();
-
-  const coords = [];
   complaints.forEach(c => {
-    if (c.latitude && c.longitude) {
+    console.log("MARKER:", c.latitude, c.longitude);
+    if (c.latitude != null && c.longitude != null) {
       const color = c.risk_score >= 70 ? "#ef4444" : (c.risk_score >= 40 ? "#f59e0b" : "#10b981");
-      L.circleMarker([c.latitude, c.longitude], {
-        radius: 9,
-        fillColor: color,
-        color: "#fff",
-        weight: 3,
-        fillOpacity: 1
-      })
-        .addTo(markerLayer)
-        .bindPopup(`<b>${escapeHtml(c.complaint)}</b><br>Score: ${c.risk_score}`);
-      coords.push([c.latitude, c.longitude]);
+      L.circleMarker([c.latitude, c.longitude], { radius: 9, fillColor: color, color: "#fff", weight: 3, fillOpacity: 1 }).addTo(markerLayer);
     }
   });
+}
 
-  if (coords.length > 0) {
-    if (coords.length === 1) {
-      map.setView(coords[0], 15);
-    } else {
-      map.fitBounds(coords, { padding: [50, 50] });
+/**
+ * 🗺 MAP OVERLAYS
+ */
+window.toggleLayer = function (layerName) {
+  activeLayers[layerName] = !activeLayers[layerName];
+  const btn = document.getElementById(`${layerName}-btn`);
+  if (activeLayers[layerName]) {
+    btn && btn.classList.add('active');
+    if (layerName === 'traffic') loadTrafficData();
+  } else {
+    btn && btn.classList.remove('active');
+    if (layerName === 'traffic') trafficLayer && trafficLayer.clearLayers();
+  }
+};
+
+function loadTrafficData() {
+  if (!map || !trafficLayer || !activeLayers.traffic) return;
+
+  const config = window.ADMIN_CONFIG || {};
+  const centerLat = config.center ? config.center[0] : map.getCenter().lat;
+  const centerLng = config.center ? config.center[1] : map.getCenter().lng;
+
+  trafficLayer.clearLayers();
+
+  const step = 0.01;
+  let delay = 0; // 🔥 IMPORTANT
+
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+
+      const lat = centerLat + (i * step);
+      const lng = centerLng + (j * step);
+
+      setTimeout(() => {
+        fetch(`/api/traffic?lat=${lat}&lon=${lng}`)
+          .then(res => res.json())
+          .then(data => {
+            if (!data || !data.congestion) return;
+
+            const color =
+              data.congestion === "HIGH" ? "#ef4444" :
+                data.congestion === "MEDIUM" ? "#f59e0b" : "#10b981";
+
+            if (data.coordinates && data.coordinates.length > 0) {
+              const info = `${data.speed} km/h (${data.congestion})`;
+
+              L.polyline(data.coordinates, {
+                color: color,
+                weight: 12,
+                opacity: 1,
+                lineJoin: 'round'
+              })
+                .addTo(trafficLayer)
+                .bindTooltip(info, { sticky: true });
+            }
+          })
+          .catch(err => console.log("Traffic fetch error:", err));
+
+      }, delay); // ✅ THIS WAS MISSING
+
+      delay += 200; // ✅ THIS WAS MISSING
     }
   }
 }
 
-function addMapLegend() {
-  if (!map) return;
-  const legend = L.control({ position: 'topright' });
-  legend.onAdd = function () {
-    const div = L.DomUtil.create('div', 'info legend');
-    div.style.background = "white";
-    div.style.padding = "10px";
-    div.style.borderRadius = "8px";
-    div.style.boxShadow = "0 2px 10px rgba(0,0,0,0.2)";
-    div.style.fontSize = "12px";
-    div.innerHTML = `
-            <h4 style="margin:0 0 5px">Severity Legend</h4>
-            <i style="background:#ef4444; width:10px; height:10px; display:inline-block; border-radius:50%"></i> High Risk (70+)<br>
-            <i style="background:#f59e0b; width:10px; height:10px; display:inline-block; border-radius:50%"></i> Medium (40-60)<br>
-            <i style="background:#10b981; width:10px; height:10px; display:inline-block; border-radius:50%"></i> Low Risk (<40)
-        `;
-    return div;
-  };
-  legend.addTo(map);
+/**
+ * 🛠 HELPERS
+ */
+function parseExplanation(exp) {
+  if (!exp) return "Baseline Intelligence Established.";
+  try {
+    let clean = exp.replace(/[\[\]']/g, "");
+    return clean.split(',').map(s => `• ${s.trim()}`).join('\n');
+  } catch (e) { return exp; }
 }
 
-// ===============================
-// 🛠 UTILS
-// ===============================
 function escapeHtml(str) {
   if (!str) return "";
   const div = document.createElement("div");
@@ -331,40 +300,76 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function filterTable(value) {
-  const rows = document.querySelectorAll("#table-body tr");
-  value = value.toLowerCase();
-  rows.forEach(row => { row.style.display = row.innerText.toLowerCase().includes(value) ? "" : "none"; });
+function renderLocationLabel(c) {
+  const source = (c.location_source || "").toUpperCase();
+  const addressStr = c.address || (c.latitude && c.longitude ? `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}` : (c.area || c.city || 'Rajanukunte'));
+
+  return `<div style="font-weight:700; color:#1e293b;">📍 ${escapeHtml(addressStr)}</div>`;
 }
 
-function doLogout() { window.location.href = "/admin-login-ui"; }
+function renderSourceBadgeFinal(source) {
+  const s = (source || "").toLowerCase();
 
-// ===============================
-// 🚀 INITIALIZATION
-// ===============================
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("[ADMIN] Initializing Dashboard...");
-  if (document.getElementById("map") && !map) {
-    map = L.map('map').setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    markerLayer = L.layerGroup().addTo(map);
+  if (s === "user") return '<span style="color: #10b981;">👤 User Reported</span>';
+  if (s === "gps") return '<span style="color: #3b82f6;">🛰️ GPS Exact</span>';
+  if (s === "user_selected") return '<span style="color: #6366f1;">✍️ Manual Area</span>';
+
+  return '<span style="color: #f59e0b;">🤖 AI GENERATED</span>';
+}
+
+/**
+ * ⚡ WINDOW-LEVEL EXPORTS
+ */
+window.assignOfficer = function (select, complaintId) {
+  const officer = select.value;
+  if (!officer) return;
+  fetch("/assign-officer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ complaint_id: complaintId, officer }) }).then(() => loadComplaints());
+};
+window.sendToOfficer = function (complaintId) {
+  fetch("/send-to-officer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ complaint_id: complaintId }) }).then(() => loadComplaints());
+};
+window.deleteComplaint = function (id) {
+  if (confirm("Purge Record?")) fetch("/delete-complaint", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ complaint_id: id }) }).then(() => loadComplaints());
+};
+window.filterTable = function (val) {
+  const rows = document.querySelectorAll("#table-body tr");
+  rows.forEach(r => r.style.display = r.innerText.toLowerCase().includes(val.toLowerCase()) ? "" : "none");
+};
+
+/**
+ * 🔔 NOTIFICATION ENGINE
+ */
+async function syncNotifications() {
+  try {
+    const res = await fetch("/notifications");
+    const data = await res.json();
+    const dropdown = document.getElementById("notif-dropdown");
+    const badge = document.querySelector(".nav-badge");
+    if (!dropdown) return;
+    const unread = data.some(n => n.is_read === 0);
+    if (badge) badge.style.display = unread ? "block" : "none";
+    const header = '<div class="dropdown-header">Notifications</div>';
+    dropdown.innerHTML = header + data.map(n => `
+      <div class="dropdown-item" style="border-bottom: 1px solid #f1f5f9; cursor: default; padding: 12px; font-weight: ${n.is_read ? 'normal' : '700'};">
+        <div style="font-size: 12px; color: #1e293b; margin-bottom: 4px;">${escapeHtml(n.message)}</div>
+        <div style="font-size: 10px; color: #94a3b8;">${formatLocalDate(n.created_at)}</div>
+      </div>
+    `).join('');
+  } catch (e) { }
+}
+
+window.toggleDropdown = async function (id) {
+  const dropdown = document.getElementById(id);
+  if (!dropdown) return;
+  const isShowing = dropdown.classList.contains('show');
+  document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+  if (!isShowing) {
+    dropdown.classList.add('show');
+    if (id === 'notif-dropdown') fetch("/notifications/read", { method: "POST" });
   }
-  addMapLegend();
-  loadComplaints();
-  syncLocation();
+  if (window.event) window.event.stopPropagation();
+};
 
-  document.addEventListener("click", (e) => {
-    const id = e.target.dataset.id;
-    if (!id) return;
-    if (e.target.classList.contains("start-btn")) handleAction(id, "status", "In Progress");
-    else if (e.target.classList.contains("resolve-btn")) handleAction(id, "status", "Resolved");
-    else if (e.target.classList.contains("undo-btn")) handleAction(id, "undo");
-    else if (e.target.classList.contains("delete-btn")) handleAction(id, "delete");
-  });
-
-  window.filterTable = filterTable;
-  window.doLogout = doLogout;
-
-  setInterval(loadComplaints, 10000);
-  setInterval(() => loadWeather(activeCity), 60000);
-});
+window.doLogout = function () {
+  window.location.href = "/admin-logout";
+};
