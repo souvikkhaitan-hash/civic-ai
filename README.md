@@ -23,4 +23,7 @@ An AI-powered civic complaint platform built as a real-world project.
 
 ## 👨‍💻 Developer
 Souvik Khaitan  
+Aayush Sharma
+Rohit Roy 
+Manas Kumar
 BCA Student | AI + Full Stack Developer
